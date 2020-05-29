@@ -7,7 +7,7 @@ namespace OsEngine.Indicators
     {
 
         public static readonly List<string> CandlePointsArray = new List<string>
-            {"Open","High","Low","Close","Median","Typical"};
+            {"Open","High","Low","Close","Median","Typical","OHLC4"};
 
         /// <summary>
         /// what price of candle taken when building
@@ -40,16 +40,22 @@ namespace OsEngine.Indicators
             Close,
 
             /// <summary>
-            /// Median. (High + Low) / 2
-            /// медиана. (High + Low) / 2
+            /// HL2 price (High + Low) / 2
+            /// HL2 цена (High + Low) / 2
             /// </summary>
             Median,
 
             /// <summary>
-            /// Typical price (High + Low + Close) / 3
-            /// типичная цена (High + Low + Close) / 3
+            /// HLC3 price (High + Low + Close) / 3
+            /// HLC3 цена (High + Low + Close) / 3
             /// </summary>
-            Typical
+            Typical,
+
+            /// <summary>
+            /// OHLC4 price (Open + High + Low + Close) / 4
+            /// OHLC4 цена (Open + High + Low + Close) / 4
+            /// </summary>
+            OHLC4
         }
 
     }

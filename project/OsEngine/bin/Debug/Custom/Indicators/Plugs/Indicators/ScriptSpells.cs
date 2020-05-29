@@ -58,9 +58,13 @@ namespace OsEngine.Indicators
             {
                 return (candle.High + candle.Low) / 2;
             }
-            else //if (type == Entity.CandlePointType.Typical)
+            else if (type == "Typical")
             {
                 return (candle.High + candle.Low + candle.Close) / 3;
+            }
+            else
+            {
+                return (candle.Open + candle.High + candle.Low + candle.Close) / 4;
             }
         }
 
