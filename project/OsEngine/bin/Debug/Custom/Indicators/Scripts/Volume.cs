@@ -20,15 +20,13 @@ namespace CustomIndicators.Scripts
         }
         private decimal GetValueVolume(List<Candle> candles, int index)
         {
-            decimal vol = 0;
             System.Drawing.Color color;
-            vol = candles[index].Volume;
             if (candles[index].Close > candles[index].Open)
                 color = Color.LawnGreen;
             else
                 color = Color.Red;
             _series.Color = color;
-            return vol;
+            return candles[index].Volume;
         }
     }
 }
