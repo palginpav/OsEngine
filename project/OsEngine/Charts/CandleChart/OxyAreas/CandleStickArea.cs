@@ -469,6 +469,193 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
                 if (loss_line_short.Points.Count > 0)
                     lines_series_list.Add(loss_line_short);
+
+                // Process limit orders for positions with "Opening" status
+                // Обработка лимитных ордеров для позиций со статусом "Открытие"
+                // Remove existing limit order series if they exist
+                // Удаляем существующие серии лимитных ордеров, если они существуют
+                if (lines_series_list.Exists(x => (string)x.Tag == "limit_buy_orders_series"))
+                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "limit_buy_orders_series"));
+
+                if (lines_series_list.Exists(x => (string)x.Tag == "limit_sell_orders_series"))
+                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "limit_sell_orders_series"));
+
+                if (lines_series_list.Exists(x => (string)x.Tag == "stop_buy_orders_series"))
+                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "stop_buy_orders_series"));
+
+                if (lines_series_list.Exists(x => (string)x.Tag == "stop_sell_orders_series"))
+                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "stop_sell_orders_series"));
+
+                // Create series for limit buy orders
+                // Создаем серию для лимитных ордеров на покупку
+                var limit_buy_orders_series = new LineSeries()
+                {
+                    LineStyle = LineStyle.Solid,
+                    Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
+                    Selectable = false,
+                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                    StrokeThickness = 1,
+                    Tag = "limit_buy_orders_series"
+                };
+
+                // Create series for limit sell orders
+                // Создаем серию для лимитных ордеров на продажу
+                var limit_sell_orders_series = new LineSeries()
+                {
+                    LineStyle = LineStyle.Solid,
+                    Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
+                    Selectable = false,
+                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                    StrokeThickness = 1,
+                    Tag = "limit_sell_orders_series"
+                };
+
+                // Create series for stop buy orders
+                // Создаем серию для стоп-ордеров на покупку
+                var stop_buy_orders_series = new LineSeries()
+                {
+                    LineStyle = LineStyle.Dash,
+                    Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
+                    Selectable = false,
+                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                    StrokeThickness = 1,
+                    Tag = "stop_buy_orders_series"
+                };
+
+                // Create series for stop sell orders
+                // Создаем серию для стоп-ордеров на продажу
+                var stop_sell_orders_series = new LineSeries()
+                {
+                    LineStyle = LineStyle.Dash,
+                    Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
+                    Selectable = false,
+                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                    StrokeThickness = 1,
+                    Tag = "stop_sell_orders_series"
+                };
+
+                // Filter positions with status "Opening" or "Closing" for limit orders
+                // Фильтруем позиции со статусом "Открытие" или "Закрытие" для лимитных ордеров
+                var positions_with_limit_orders = deals.Where(x => x.State == PositionStateType.Opening || x.State == PositionStateType.Closing).ToArray();
+
+                foreach (var position in positions_with_limit_orders)
+                {
+                    // Check OpenOrders for opening positions
+                    // Проверяем OpenOrders для открывающихся позиций
+                    if (position.OpenOrders != null && position.OpenOrders.Count > 0)
+                    {
+                        foreach (var order in position.OpenOrders)
+                        {
+                            if (order.State == OrderStateType.Active || order.State == OrderStateType.Pending)
+                            {
+                                // Check if it's a limit order
+                                // Проверяем, является ли это лимитным ордером
+                                if (order.TypeOrder == OrderPriceType.Limit)
+                                {
+                                    if (order.Side == Side.Buy)
+                                    {
+                                        // Add horizontal line for limit buy order
+                                        // Добавляем горизонтальную линию для лимитного ордера на покупку
+                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
+                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
+                                    }
+                                    else if (order.Side == Side.Sell)
+                                    {
+                                        // Add horizontal line for limit sell order
+                                        // Добавляем горизонтальную линию для лимитного ордера на продажу
+                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
+                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check CloseOrders for closing positions
+                    // Проверяем CloseOrders для закрывающихся позиций
+                    if (position.CloseOrders != null && position.CloseOrders.Count > 0)
+                    {
+                        foreach (var order in position.CloseOrders)
+                        {
+                            if (order.State == OrderStateType.Active || order.State == OrderStateType.Pending)
+                            {
+                                // Check if it's a limit order
+                                // Проверяем, является ли это лимитным ордером
+                                if (order.TypeOrder == OrderPriceType.Limit)
+                                {
+                                    if (order.Side == Side.Buy)
+                                    {
+                                        // Add horizontal line for limit buy order (closing)
+                                        // Добавляем горизонтальную линию для лимитного ордера на покупку (закрытие)
+                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
+                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
+                                    }
+                                    else if (order.Side == Side.Sell)
+                                    {
+                                        // Add horizontal line for limit sell order (closing)
+                                        // Добавляем горизонтальную линию для лимитного ордера на продажу (закрытие)
+                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
+                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check for stop orders
+                    // Проверяем стоп-ордера
+                    if (position.StopOrderIsActive && position.StopOrderRedLine != 0)
+                    {
+                        if (position.Direction == Side.Buy)
+                        {
+                            // Add horizontal line for stop buy order
+                            // Добавляем горизонтальную линию для стоп-ордера на покупку
+                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.StopOrderRedLine));
+                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.StopOrderRedLine));
+                        }
+                        else if (position.Direction == Side.Sell)
+                        {
+                            // Add horizontal line for stop sell order
+                            // Добавляем горизонтальную линию для стоп-ордера на продажу
+                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.StopOrderRedLine));
+                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.StopOrderRedLine));
+                        }
+                    }
+
+                    // Check for profit orders
+                    // Проверяем ордера на прибыль
+                    if (position.ProfitOrderIsActive && position.ProfitOrderRedLine != 0)
+                    {
+                        if (position.Direction == Side.Buy)
+                        {
+                            // Add horizontal line for profit sell order
+                            // Добавляем горизонтальную линию для ордера на прибыль при продаже
+                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.ProfitOrderRedLine));
+                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.ProfitOrderRedLine));
+                        }
+                        else if (position.Direction == Side.Sell)
+                        {
+                            // Add horizontal line for profit buy order
+                            // Добавляем горизонтальную линию для ордера на прибыль при покупке
+                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.ProfitOrderRedLine));
+                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.ProfitOrderRedLine));
+                        }
+                    }
+                }
+
+                // Add series to the chart if they have points
+                // Добавляем серии на график, если они содержат точки
+                if (limit_buy_orders_series.Points.Count > 0)
+                    lines_series_list.Add(limit_buy_orders_series);
+
+                if (limit_sell_orders_series.Points.Count > 0)
+                    lines_series_list.Add(limit_sell_orders_series);
+
+                if (stop_buy_orders_series.Points.Count > 0)
+                    lines_series_list.Add(stop_buy_orders_series);
+
+                if (stop_sell_orders_series.Points.Count > 0)
+                    lines_series_list.Add(stop_sell_orders_series);
             };
 
 
