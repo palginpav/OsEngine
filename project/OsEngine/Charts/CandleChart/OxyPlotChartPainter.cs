@@ -1631,16 +1631,26 @@ namespace OsEngine.Charts.CandleChart
                         // Обновить цвет фона
                         area.plot_model.Background = OxyColor.Parse(area.area_settings?.brush_background ?? "#111721");
                         
-                        // Update axes colors
-                        // Обновить цвета осей
+                        // Update axes colors without aggressive formatting
+                        // Обновить цвета осей без агрессивного форматирования
                         foreach (var axis in area.plot_model.Axes)
                         {
+                            // Clear any duplicate labels or formatting
+                            // Очистить любые дублирующиеся метки или форматирование
+                            axis.LabelFormatter = null;
+                            
                             if (axis is DateTimeAxis dateAxis)
                             {
                                 dateAxis.TextColor = OxyColors.White;
                                 dateAxis.TicklineColor = OxyColors.Gray;
                                 dateAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
                                 dateAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                                
+                                // Prevent X-axis duplication
+                                // Предотвратить дублирование оси X
+                                dateAxis.StringFormat = "HH:mm"; // Simple time format
+                                dateAxis.MajorStep = 1.0 / 24.0; // 1 hour steps
+                                dateAxis.MinorStep = 1.0 / 96.0; // 15 minute steps
                             }
                             else if (axis is LinearAxis linearAxis)
                             {
@@ -1648,8 +1658,17 @@ namespace OsEngine.Charts.CandleChart
                                 linearAxis.TicklineColor = OxyColors.Gray;
                                 linearAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
                                 linearAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                                
+                                // Prevent Y-axis duplication
+                                // Предотвратить дублирование оси Y
+                                linearAxis.MajorStep = double.NaN; // Auto-calculate steps
+                                linearAxis.MinorStep = double.NaN;
                             }
                         }
+
+                        // Clear any duplicate annotations or labels
+                        // Очистить любые дублирующиеся аннотации или метки
+                        ClearDuplicateLabels(area);
 
                         // Refresh plot
                         // Обновить график
@@ -1660,6 +1679,61 @@ namespace OsEngine.Charts.CandleChart
                         // Log error if logging is available
                         // Записать ошибку, если доступно журналирование
                         continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
+        }
+
+        /// <summary>
+        /// Clear duplicate labels and annotations to prevent X-axis duplication
+        /// Очистить дублирующиеся метки и аннотации для предотвращения дублирования оси X
+        /// </summary>
+        private void ClearDuplicateLabels(OxyArea area)
+        {
+            if (area?.plot_model == null)
+                return;
+
+            try
+            {
+                // Only remove annotations that are explicitly marked as duplicates
+                // Удалять только аннотации, явно помеченные как дублирующиеся
+                var duplicateAnnotations = area.plot_model.Annotations?
+                    .Where(a => a?.Tag != null && a.Tag.ToString().Contains("Duplicate"))
+                    .ToList();
+
+                if (duplicateAnnotations != null)
+                {
+                    foreach (var annotation in duplicateAnnotations)
+                    {
+                        if (annotation != null)
+                            area.plot_model.Annotations.Remove(annotation);
+                    }
+                }
+
+                // Ensure axes have proper formatting without aggressive step settings
+                // Обеспечить правильное форматирование осей без агрессивных настроек шагов
+                foreach (var axis in area.plot_model.Axes)
+                {
+                    if (axis is DateTimeAxis dateAxis)
+                    {
+                        // Use auto-calculated steps to prevent overlap
+                        // Использовать автоматически рассчитанные шаги для предотвращения перекрытия
+                        dateAxis.MajorStep = double.NaN;
+                        dateAxis.MinorStep = double.NaN;
+                        dateAxis.LabelFormatter = null;
+                    }
+                    else if (axis is LinearAxis linearAxis)
+                    {
+                        // Use auto-calculated steps
+                        // Использовать автоматически рассчитанные шаги
+                        linearAxis.MajorStep = double.NaN;
+                        linearAxis.MinorStep = double.NaN;
+                        linearAxis.LabelFormatter = null;
                     }
                 }
             }
@@ -2177,6 +2251,10 @@ namespace OsEngine.Charts.CandleChart
                         // Установить темную тему для осей
                         foreach (var axis in area.plot_model.Axes)
                         {
+                            // Clear any duplicate labels or formatting
+                            // Очистить любые дублирующиеся метки или форматирование
+                            axis.LabelFormatter = null;
+                            
                             axis.TextColor = OxyColors.White;
                             axis.TicklineColor = OxyColor.Parse("#404040");
                             axis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
@@ -2510,8 +2588,8 @@ namespace OsEngine.Charts.CandleChart
 
         public void SetWhiteScheme()
         {
-            // Set light/white color scheme for all chart areas
-            // Установить светлую/белую цветовую схему для всех областей чарта
+            // Set light/white color scheme for all chart areas with improved contrast
+            // Установить светлую/белую цветовую схему для всех областей чарта с улучшенным контрастом
             try
             {
                 foreach (var area in all_areas)
@@ -2526,25 +2604,40 @@ namespace OsEngine.Charts.CandleChart
                         area.plot_model.Background = OxyColors.White;
                         area.plot_model.PlotAreaBackground = OxyColors.White;
                         
-                        // Set light theme for axes
-                        // Установить светлую тему для осей
+                        // Set light theme for axes with better contrast but no aggressive formatting
+                        // Установить светлую тему для осей с лучшим контрастом, но без агрессивного форматирования
                         foreach (var axis in area.plot_model.Axes)
                         {
                             axis.TextColor = OxyColors.Black;
-                            axis.TicklineColor = OxyColor.Parse("#C0C0C0");
-                            axis.MajorGridlineColor = OxyColor.FromArgb(50, 0, 0, 0);
-                            axis.MinorGridlineColor = OxyColor.FromArgb(25, 0, 0, 0);
-                            axis.AxislineColor = OxyColor.Parse("#C0C0C0");
+                            axis.TicklineColor = OxyColor.Parse("#808080"); // Darker gray for better contrast
+                            axis.MajorGridlineColor = OxyColor.FromArgb(80, 0, 0, 0); // Stronger grid lines
+                            axis.MinorGridlineColor = OxyColor.FromArgb(40, 0, 0, 0);
+                            axis.AxislineColor = OxyColor.Parse("#404040"); // Darker axis lines
+                            
+                            // Use auto-calculated steps to prevent overlap
+                            // Использовать автоматически рассчитанные шаги для предотвращения перекрытия
+                            if (axis is DateTimeAxis dateAxis)
+                            {
+                                dateAxis.MajorStep = double.NaN;
+                                dateAxis.MinorStep = double.NaN;
+                                dateAxis.LabelFormatter = null;
+                            }
+                            else if (axis is LinearAxis linearAxis)
+                            {
+                                linearAxis.MajorStep = double.NaN;
+                                linearAxis.MinorStep = double.NaN;
+                                linearAxis.LabelFormatter = null;
+                            }
                         }
 
-                        // Update candle series colors for light theme
-                        // Обновить цвета серий свечей для светлой темы
+                        // Update candle series colors for light theme with better contrast
+                        // Обновить цвета серий свечей для светлой темы с лучшим контрастом
                         foreach (var series in area.plot_model.Series)
                         {
                             if (series is CandleStickSeries candleSeries)
                             {
-                                candleSeries.IncreasingColor = OxyColors.Green;
-                                candleSeries.DecreasingColor = OxyColors.Red;
+                                candleSeries.IncreasingColor = OxyColor.Parse("#006400"); // Dark green
+                                candleSeries.DecreasingColor = OxyColor.Parse("#8B0000"); // Dark red
                                 candleSeries.Color = OxyColors.Black;
                             }
                             else if (series is LineSeries lineSeries)
@@ -2553,6 +2646,30 @@ namespace OsEngine.Charts.CandleChart
                                 // Сохранить существующие цвета или установить черный по умолчанию
                                 if (lineSeries.Color == OxyColors.Undefined)
                                     lineSeries.Color = OxyColors.Black;
+                            }
+                            else if (series is ScatterSeries scatterSeries)
+                            {
+                                // Ensure scatter points have good contrast
+                                // Обеспечить хороший контраст для точечных элементов
+                                if (scatterSeries.MarkerFill == OxyColors.Undefined)
+                                    scatterSeries.MarkerFill = OxyColors.Black;
+                                if (scatterSeries.MarkerStroke == OxyColors.Undefined)
+                                    scatterSeries.MarkerStroke = OxyColors.Black;
+                            }
+                        }
+
+                        // Clear any duplicate annotations or labels
+                        // Очистить любые дублирующиеся аннотации или метки
+                        var duplicateAnnotations = area.plot_model.Annotations?
+                            .Where(a => a?.Tag != null && a.Tag.ToString().Contains("Duplicate"))
+                            .ToList();
+
+                        if (duplicateAnnotations != null)
+                        {
+                            foreach (var annotation in duplicateAnnotations)
+                            {
+                                if (annotation != null)
+                                    area.plot_model.Annotations.Remove(annotation);
                             }
                         }
 
