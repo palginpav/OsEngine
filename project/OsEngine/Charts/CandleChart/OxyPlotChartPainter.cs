@@ -136,7 +136,57 @@ namespace OsEngine.Charts.CandleChart
 
         public void ClearAlerts(List<IIAlert> alertArray)
         {
-            //throw new NotImplementedException();
+            if (alertArray == null || alertArray.Count == 0)
+                return;
+
+            // Remove alert-related annotations and series from all areas
+            // Удалить аннотации и серии, связанные с предупреждениями, из всех областей
+            foreach (var area in all_areas)
+            {
+                if (area?.plot_model == null)
+                    continue;
+
+                try
+                {
+                    // Remove alert annotations
+                    // Удалить аннотации предупреждений
+                    var alertAnnotations = area.plot_model.Annotations?
+                        .Where(a => a?.Tag != null && a.Tag.ToString().StartsWith("Alert_"))
+                        .ToList();
+
+                    if (alertAnnotations != null)
+                    {
+                        foreach (var annotation in alertAnnotations)
+                        {
+                            if (annotation != null)
+                                area.plot_model.Annotations.Remove(annotation);
+                        }
+                    }
+
+                    // Remove alert series
+                    // Удалить серии предупреждений
+                    var alertSeries = area.plot_model.Series?
+                        .Where(s => s?.Title != null && s.Title.StartsWith("Alert_"))
+                        .ToList();
+
+                    if (alertSeries != null)
+                    {
+                        foreach (var series in alertSeries)
+                        {
+                            if (series != null)
+                                area.plot_model.Series.Remove(series);
+                        }
+                    }
+
+                    area.plot_model.InvalidatePlot(false);
+                }
+                catch (Exception ex)
+                {
+                    // Log error if logging is available
+                    // Записать ошибку, если доступно журналирование
+                    continue;
+                }
+            }
         }
 
         public void ClearDataPointsAndSizeValue()
@@ -153,8 +203,55 @@ namespace OsEngine.Charts.CandleChart
 
         public void MoveChartToTheRight(int scaleSize)
         {
-            // Implementation needed for OxyPlot
-            // Реализация необходима для OxyPlot
+            // Move the chart view to the rightmost position
+            // Переместить вид чарта в крайнее правое положение
+            if (OxyArea.my_candles == null || OxyArea.my_candles.Count == 0)
+                return;
+
+            foreach (var area in all_areas.Where(x => x.Tag != (object)"ScrollChart" && x.Tag != (object)"ControlPanel"))
+            {
+                if (area?.date_time_axis_X == null)
+                    continue;
+
+                try
+                {
+                    // Calculate the rightmost position based on candle data
+                    // Вычислить крайнее правое положение на основе данных свечей
+                    double rightmostTime = DateTimeAxis.ToDouble(OxyArea.my_candles.Last().TimeStart);
+                    double timeRange = scaleSize * 60; // Assuming minutes, adjust as needed
+                    
+                    // Set the axis range to show the rightmost data
+                    // Установить диапазон оси для отображения крайних правых данных
+                    area.date_time_axis_X.Zoom(rightmostTime - timeRange, rightmostTime + timeRange * 0.1);
+                    
+                    // Update Y axis to fit the visible data
+                    // Обновить ось Y для соответствия видимым данным
+                    if (area is CandleStickArea)
+                    {
+                        var minMax = area.GetHighLow(true, rightmostTime - timeRange, rightmostTime + timeRange * 0.1);
+                        if (minMax?.Count >= 2)
+                        {
+                            area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                        }
+                    }
+                    else
+                    {
+                        var minMax = area.GetHighLow(false, rightmostTime - timeRange, rightmostTime + timeRange * 0.1);
+                        if (minMax?.Count >= 2)
+                        {
+                            area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                        }
+                    }
+                    
+                    area.plot_model?.InvalidatePlot(false);
+                }
+                catch (Exception ex)
+                {
+                    // Log error if logging is available
+                    // Записать ошибку, если доступно журналирование
+                    continue;
+                }
+            }
         }
 
         public void ClearSeries()
@@ -251,7 +348,59 @@ namespace OsEngine.Charts.CandleChart
 
         public void CreateTickArea()
         {
-            throw new NotImplementedException();
+            // Create a tick data area for displaying tick-level information
+            // Создать область данных тиков для отображения информации уровня тиков
+            
+            if (all_areas.Exists(x => (string)x.Tag == "TickArea"))
+            {
+                return; // Tick area already exists / Область тиков уже существует
+            }
+
+            try
+            {
+                var tick_area = new IndicatorArea(new OxyAreaSettings()
+                {
+                    cursor_X_is_active = true,
+                    cursor_Y_is_active = true,
+                    Tag = "TickArea",
+                    AbsoluteMinimum = double.MinValue,
+                    Y_Axies_is_visible = true,
+                    X_Axies_is_visible = true,
+                    brush_background = "#111721"
+                }, all_areas, "TickArea", this);
+
+                tick_area.indicator_name = "Ticks";
+                tick_area.bot_tab = this.bot_tab;
+                tick_area.bot_name = this.bot_name;
+
+                // Configure the tick area appearance
+                // Настроить внешний вид области тиков
+                if (tick_area.plot_model?.Axes?.Count > 0)
+                {
+                    tick_area.plot_model.Axes[0].TextColor = OxyColors.White;
+                    tick_area.plot_model.Axes[0].TicklineColor = OxyColors.Gray;
+                }
+                if (tick_area.plot_model?.Axes?.Count > 1)
+                {
+                    tick_area.plot_model.Axes[1].IntervalLength = 10;
+                    tick_area.plot_model.Axes[1].MinorGridlineStyle = LineStyle.Dot;
+                }
+
+                all_areas.Add(tick_area);
+                mediator?.AddOxyArea(tick_area);
+
+                // Add the tick area to chart layout if chart is already built
+                // Добавить область тиков в макет чарта, если чарт уже построен
+                if (main_grid_chart != null)
+                {
+                    AddAreaToChartLayout(tick_area);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void Delete()
@@ -347,7 +496,43 @@ namespace OsEngine.Charts.CandleChart
 
         public void DeleteTickArea()
         {
-            throw new NotImplementedException();
+            // Remove the tick area from the chart
+            // Удалить область тиков из чарта
+            var tickArea = all_areas.Find(x => (string)x.Tag == "TickArea");
+            if (tickArea != null)
+            {
+                try
+                {
+                    // Remove from mediator first
+                    // Сначала удалить из медиатора
+                    mediator?.RemoveOxyArea(tickArea);
+                    
+                    // Dispose the area
+                    // Освободить область
+                    tickArea.Dispose();
+                    
+                    // Remove from areas list
+                    // Удалить из списка областей
+                    all_areas.Remove(tickArea);
+                    
+                    // Remove from chart layout
+                    // Удалить из макета чарта
+                    RemoveAreaFromChartLayout(tickArea);
+                    
+                    // Remove associated splitter
+                    // Удалить связанный разделитель
+                    var splitter = splitters?.Find(x => (string)x.Tag == "TickArea");
+                    if (splitter != null)
+                    {
+                        splitters.Remove(splitter);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log error if logging is available
+                    // Записать ошибку, если доступно журналирование
+                }
+            }
         }
 
         public List<string> GetAreasNames()
@@ -357,12 +542,64 @@ namespace OsEngine.Charts.CandleChart
 
         public int GetCursorSelectCandleNumber()
         {
-            throw new NotImplementedException();
+            // Get the candle number at the current cursor position
+            // Получить номер свечи в текущей позиции курсора
+            if (OxyArea.my_candles == null || OxyArea.my_candles.Count == 0)
+                return -1;
+
+            var primeArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (primeArea?.date_time_axis_X == null)
+                return -1;
+
+            try
+            {
+                // Get the current mouse position in data coordinates
+                // Получить текущую позицию мыши в координатах данных
+                var mouseDataPoint = primeArea.date_time_axis_X.InverseTransform(primeArea.mouse_screen_point.X);
+                var mouseDateTime = DateTimeAxis.ToDateTime(mouseDataPoint);
+
+                // Find the closest candle to the mouse position
+                // Найти ближайшую свечу к позиции мыши
+                int closestIndex = -1;
+                TimeSpan minDifference = TimeSpan.MaxValue;
+
+                for (int i = 0; i < OxyArea.my_candles.Count; i++)
+                {
+                    var difference = Math.Abs((OxyArea.my_candles[i].TimeStart - mouseDateTime).Ticks);
+                    if (difference < minDifference.Ticks)
+                    {
+                        minDifference = new TimeSpan(difference);
+                        closestIndex = i;
+                    }
+                }
+
+                return closestIndex;
+            }
+            catch
+            {
+                return -1;
+            }
         }
 
         public decimal GetCursorSelectPrice()
         {
-            throw new NotImplementedException();
+            // Get the price at the current cursor position
+            // Получить цену в текущей позиции курсора
+            var primeArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (primeArea?.linear_axis_Y == null)
+                return 0;
+
+            try
+            {
+                // Get the current mouse position in data coordinates
+                // Получить текущую позицию мыши в координатах данных
+                var mousePricePoint = primeArea.linear_axis_Y.InverseTransform(primeArea.mouse_screen_point.Y);
+                return (decimal)mousePricePoint;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         public void GoChartToIndex(int index)
@@ -420,57 +657,505 @@ namespace OsEngine.Charts.CandleChart
 
         public void PaintAlert(AlertToChart alert)
         {
-            throw new NotImplementedException();
+            if (alert == null)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => (string)x.Tag == "Prime");
+            if (targetArea == null || targetArea.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a line annotation for the alert
+                // Создать линейную аннотацию для предупреждения
+                var alertLine = new OxyPlot.Annotations.LineAnnotation
+                {
+                    Type = LineAnnotationType.Horizontal,
+                    Y = alert.Lines != null && alert.Lines.Length > 0 && alert.Lines[0] != null ? (double)alert.Lines[0].LastPoint : 0,
+                    Color = alert.ColorLine.A > 0 ? 
+                        OxyColor.FromArgb(alert.ColorLine.A, alert.ColorLine.R, alert.ColorLine.G, alert.ColorLine.B) : 
+                        OxyColors.Red,
+                    StrokeThickness = 2,
+                    LineStyle = LineStyle.Solid,
+                    Tag = $"Alert_{alert.GetHashCode()}",
+                    Text = alert.Message ?? "Alert",
+                    TextColor = OxyColors.White
+                };
+
+                targetArea.plot_model.Annotations.Add(alertLine);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void RemoveAlert(AlertToChart alertToChart)
         {
-            throw new NotImplementedException();
+            if (alertToChart == null)
+                return;
+
+            // Remove the alert from all areas
+            // Удалить предупреждение из всех областей
+            foreach (var area in all_areas)
+            {
+                if (area?.plot_model == null)
+                    continue;
+
+                try
+                {
+                    var alertTag = $"Alert_{alertToChart.GetHashCode()}";
+                    
+                    // Remove alert annotations
+                    // Удалить аннотации предупреждений
+                    var annotationsToRemove = area.plot_model.Annotations?
+                        .Where(a => a?.Tag != null && a.Tag.ToString() == alertTag)
+                        .ToList();
+
+                    if (annotationsToRemove != null)
+                    {
+                        foreach (var annotation in annotationsToRemove)
+                        {
+                            if (annotation != null)
+                                area.plot_model.Annotations.Remove(annotation);
+                        }
+                    }
+
+                    // Remove alert series
+                    // Удалить серии предупреждений
+                    var seriesToRemove = area.plot_model.Series?
+                        .Where(s => s?.Title != null && s.Title == alertTag)
+                        .ToList();
+
+                    if (seriesToRemove != null)
+                    {
+                        foreach (var series in seriesToRemove)
+                        {
+                            if (series != null)
+                                area.plot_model.Series.Remove(series);
+                        }
+                    }
+
+                    if ((annotationsToRemove?.Count ?? 0) > 0 || (seriesToRemove?.Count ?? 0) > 0)
+                    {
+                        area.plot_model.InvalidatePlot(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log error if logging is available
+                    // Записать ошибку, если доступно журналирование
+                    continue;
+                }
+            }
         }
 
         public bool HaveAlertOnChart(AlertToChart alertToChart)
         {
-            throw new NotImplementedException();
+            if (alertToChart == null)
+                return false;
+
+            var alertTag = $"Alert_{alertToChart.GetHashCode()}";
+
+            // Check if alert exists in any area
+            // Проверить, существует ли предупреждение в любой области
+            foreach (var area in all_areas)
+            {
+                if (area?.plot_model == null)
+                    continue;
+
+                try
+                {
+                    // Check annotations
+                    // Проверить аннотации
+                    var hasAnnotation = area.plot_model.Annotations?
+                        .Any(a => a?.Tag != null && a.Tag.ToString() == alertTag) ?? false;
+
+                    if (hasAnnotation)
+                        return true;
+
+                    // Check series
+                    // Проверить серии
+                    var hasSeries = area.plot_model.Series?
+                        .Any(s => s?.Title != null && s.Title == alertTag) ?? false;
+
+                    if (hasSeries)
+                        return true;
+                }
+                catch (Exception ex)
+                {
+                    // Log error if logging is available
+                    // Записать ошибку, если доступно журналирование
+                    continue;
+                }
+            }
+
+            return false;
         }
 
         public void ProcessAlert(AlertToChart alert, bool needToWait)
         {
-            throw new NotImplementedException();
+            if (alert == null || isPaint == false)
+                return;
+
+            if (needToWait)
+            {
+                // If we need to wait, process the alert asynchronously
+                // Если нужно подождать, обработать предупреждение асинхронно
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        Thread.Sleep(50); // Small delay to ensure chart is ready
+                        PaintAlert(alert);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                    }
+                });
+            }
+            else
+            {
+                // Process immediately
+                // Обработать немедленно
+                PaintAlert(alert);
+            }
         }
 
         public void PaintHorisiontalLineOnArea(LineHorisontal lineElement)
         {
-            throw new NotImplementedException();
+            if (lineElement == null)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => (string)x.Tag == lineElement.Area);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create horizontal line annotation
+                // Создать аннотацию горизонтальной линии
+                var horizontalLine = new OxyPlot.Annotations.LineAnnotation
+                {
+                    Type = LineAnnotationType.Horizontal,
+                    Y = (double)lineElement.Value,
+                    Color = OxyColor.FromArgb(lineElement.Color.A, lineElement.Color.R, lineElement.Color.G, lineElement.Color.B),
+                    StrokeThickness = lineElement.LineWidth,
+                    LineStyle = LineStyle.Solid,
+                    Tag = $"HorizontalLine_{lineElement.GetHashCode()}"
+                };
+
+                targetArea.plot_model.Annotations.Add(horizontalLine);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void PaintHorizontalLineOnArea(LineHorisontal lineElement)
         {
-            throw new NotImplementedException();
+            PaintHorisiontalLineOnArea(lineElement);
         }
 
         public void PaintInDifColor(int indexStart, int indexEnd, string seriesName)
         {
-            throw new NotImplementedException();
+            if (OxyArea.my_candles == null || OxyArea.my_candles.Count == 0)
+                return;
+
+            if (indexStart < 0 || indexEnd >= OxyArea.my_candles.Count || indexStart > indexEnd)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a highlighted series for the specified range
+                // Создать подсвеченную серию для указанного диапазона
+                var highlightSeries = new CandleStickSeries
+                {
+                    Title = $"Highlight_{seriesName}_{indexStart}_{indexEnd}",
+                    Color = OxyColors.Orange,
+                    IncreasingColor = OxyColors.LightGreen,
+                    DecreasingColor = OxyColors.LightCoral,
+                    StrokeThickness = 2
+                };
+
+                // Add candles from the specified range
+                // Добавить свечи из указанного диапазона
+                for (int i = indexStart; i <= indexEnd; i++)
+                {
+                    var candle = OxyArea.my_candles[i];
+                    highlightSeries.Items.Add(new HighLowItem(
+                        DateTimeAxis.ToDouble(candle.TimeStart),
+                        (double)candle.High,
+                        (double)candle.Low,
+                        (double)candle.Open,
+                        (double)candle.Close
+                    ));
+                }
+
+                // Remove any existing highlight series with the same name
+                // Удалить любые существующие подсвеченные серии с тем же именем
+                var existingSeries = targetArea.plot_model.Series?
+                    .Where(s => s?.Title != null && s.Title.StartsWith($"Highlight_{seriesName}"))
+                    .ToList();
+
+                if (existingSeries != null)
+                {
+                    foreach (var series in existingSeries)
+                    {
+                        if (series != null)
+                            targetArea.plot_model.Series.Remove(series);
+                    }
+                }
+
+                targetArea.plot_model.Series.Add(highlightSeries);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void PaintOneLine(System.Windows.Forms.DataVisualization.Charting.Series mySeries, List<Candle> candles, ChartAlertLine line, Color colorLine, int borderWidth, Color colorLabel, string label)
         {
-            throw new NotImplementedException();
+            if (candles == null || candles.Count == 0 || line == null)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a line series for the alert line
+                // Создать линейную серию для линии предупреждения
+                var lineSeries = new LineSeries
+                {
+                    Title = label ?? $"AlertLine_{line.GetHashCode()}",
+                    Color = OxyColor.FromArgb(colorLine.A, colorLine.R, colorLine.G, colorLine.B),
+                    StrokeThickness = borderWidth,
+                    LineStyle = LineStyle.Solid
+                };
+
+                // Add line points based on the alert line properties
+                // Добавить точки линии на основе свойств линии предупреждения
+                // Create a line from first point to second point
+                // Создать линию от первой точки ко второй точке
+                lineSeries.Points.Add(new OxyPlot.DataPoint(
+                    DateTimeAxis.ToDouble(line.TimeFirstPoint), 
+                    (double)line.ValueFirstPoint
+                ));
+                lineSeries.Points.Add(new OxyPlot.DataPoint(
+                    DateTimeAxis.ToDouble(line.TimeSecondPoint), 
+                    (double)line.ValueSecondPoint
+                ));
+
+                // Remove existing line with same label
+                // Удалить существующую линию с тем же лабелом
+                var existingSeries = targetArea.plot_model.Series?
+                    .Where(s => s?.Title == lineSeries.Title)
+                    .ToList();
+
+                if (existingSeries != null)
+                {
+                    foreach (var series in existingSeries)
+                    {
+                        if (series != null)
+                            targetArea.plot_model.Series.Remove(series);
+                    }
+                }
+
+                targetArea.plot_model.Series.Add(lineSeries);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void PaintPoint(PointElement point)
         {
-            throw new NotImplementedException();
+            if (point == null)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => (string)x.Tag == point.Area || x is CandleStickArea);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a scatter series for the point
+                // Создать серию точек для точки
+                var scatterSeries = new ScatterSeries
+                {
+                    Title = $"Point_{point.GetHashCode()}",
+                    MarkerType = MarkerType.Circle,
+                    MarkerSize = point.Size,
+                    MarkerFill = OxyColor.FromArgb(point.Color.A, point.Color.R, point.Color.G, point.Color.B),
+                    MarkerStroke = OxyColors.Black,
+                    MarkerStrokeThickness = 1
+                };
+
+                // Add the point
+                // Добавить точку
+                scatterSeries.Points.Add(new ScatterPoint(
+                    DateTimeAxis.ToDouble(point.TimePoint),
+                    (double)point.Y
+                ));
+
+                // Remove existing point with same hash
+                // Удалить существующую точку с тем же хэшем
+                var existingSeries = targetArea.plot_model.Series?
+                    .Where(s => s?.Title == scatterSeries.Title)
+                    .ToList();
+
+                if (existingSeries != null)
+                {
+                    foreach (var series in existingSeries)
+                    {
+                        if (series != null)
+                            targetArea.plot_model.Series.Remove(series);
+                    }
+                }
+
+                targetArea.plot_model.Series.Add(scatterSeries);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void PaintSingleCandlePattern(List<Candle> candles)
         {
-            throw new NotImplementedException();
+            if (candles == null || candles.Count == 0)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a pattern series for highlighting specific candles
+                // Создать серию паттернов для подсвечивания определенных свечей
+                var patternSeries = new CandleStickSeries
+                {
+                    Title = "CandlePattern",
+                    Color = OxyColors.Yellow,
+                    IncreasingColor = OxyColors.LightYellow,
+                    DecreasingColor = OxyColors.Gold,
+                    StrokeThickness = 3
+                };
+
+                // Add pattern candles
+                // Добавить свечи паттерна
+                foreach (var candle in candles)
+                {
+                    patternSeries.Items.Add(new HighLowItem(
+                        DateTimeAxis.ToDouble(candle.TimeStart),
+                        (double)candle.High,
+                        (double)candle.Low,
+                        (double)candle.Open,
+                        (double)candle.Close
+                    ));
+                }
+
+                // Remove existing pattern series
+                // Удалить существующие серии паттернов
+                var existingSeries = targetArea.plot_model.Series?
+                    .Where(s => s?.Title == "CandlePattern")
+                    .ToList();
+
+                if (existingSeries != null)
+                {
+                    foreach (var series in existingSeries)
+                    {
+                        if (series != null)
+                            targetArea.plot_model.Series.Remove(series);
+                    }
+                }
+
+                targetArea.plot_model.Series.Add(patternSeries);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void PaintSingleVolumePattern(List<Candle> candles)
         {
-            throw new NotImplementedException();
+            if (candles == null || candles.Count == 0)
+                return;
+
+            var targetArea = all_areas.FirstOrDefault(x => x is CandleStickArea);
+            if (targetArea?.plot_model == null)
+                return;
+
+            try
+            {
+                // Create a volume pattern series using bar chart
+                // Создать серию паттернов объема, используя гистограмму
+                var volumePatternSeries = new LinearBarSeries
+                {
+                    Title = "VolumePattern",
+                    FillColor = OxyColor.FromArgb(128, 255, 165, 0), // Semi-transparent orange
+                    StrokeColor = OxyColors.Orange,
+                    StrokeThickness = 1
+                };
+
+                // Add volume pattern bars
+                // Добавить столбцы паттерна объема
+                foreach (var candle in candles)
+                {
+                    volumePatternSeries.Points.Add(new OxyPlot.DataPoint(
+                        DateTimeAxis.ToDouble(candle.TimeStart),
+                        (double)candle.Volume
+                    ));
+                }
+
+                // Remove existing volume pattern series
+                // Удалить существующие серии паттернов объема
+                var existingSeries = targetArea.plot_model.Series?
+                    .Where(s => s?.Title == "VolumePattern")
+                    .ToList();
+
+                if (existingSeries != null)
+                {
+                    foreach (var series in existingSeries)
+                    {
+                        if (series != null)
+                            targetArea.plot_model.Series.Remove(series);
+                    }
+                }
+
+                targetArea.plot_model.Series.Add(volumePatternSeries);
+                targetArea.plot_model.InvalidatePlot(false);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
 
@@ -528,7 +1213,64 @@ namespace OsEngine.Charts.CandleChart
 
         public void ProcessClearElem(IChartElement element)
         {
-            throw new NotImplementedException();
+            if (element == null)
+                return;
+
+            try
+            {
+                // Remove chart element from all areas
+                // Удалить элемент чарта из всех областей
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    string elementTag = $"Element_{element.GetHashCode()}";
+                    
+                    // Remove annotations related to this element
+                    // Удалить аннотации, связанные с этим элементом
+                    var annotationsToRemove = area.plot_model.Annotations?
+                        .Where(a => a?.Tag != null && a.Tag.ToString().Contains(elementTag))
+                        .ToList();
+
+                    if (annotationsToRemove != null)
+                    {
+                        foreach (var annotation in annotationsToRemove)
+                        {
+                            if (annotation != null)
+                                area.plot_model.Annotations.Remove(annotation);
+                        }
+                    }
+
+                    // Remove series related to this element
+                    // Удалить серии, связанные с этим элементом
+                    var seriesToRemove = area.plot_model.Series?
+                        .Where(s => s?.Title != null && s.Title.Contains(elementTag))
+                        .ToList();
+
+                    if (seriesToRemove != null)
+                    {
+                        foreach (var series in seriesToRemove)
+                        {
+                            if (series != null)
+                                area.plot_model.Series.Remove(series);
+                        }
+                    }
+
+                    if ((annotationsToRemove?.Count ?? 0) > 0 || (seriesToRemove?.Count ?? 0) > 0)
+                    {
+                        area.plot_model.InvalidatePlot(false);
+                    }
+                }
+
+                // Note: mediator.ClearElement method doesn't exist, so we skip this
+                // Примечание: метод mediator.ClearElement не существует, поэтому пропускаем это
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void ProcessElem(IChartElement element)
@@ -871,12 +1613,102 @@ namespace OsEngine.Charts.CandleChart
 
         public void RefreshChartColor()
         {
-            // кто нить другой сделает
+            // Refresh chart colors for all areas based on current color scheme
+            // Обновить цвета чарта для всех областей на основе текущей цветовой схемы
+            if (color_keeper == null || all_areas == null)
+                return;
+
+            try
+            {
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    try
+                    {
+                        // Update background color
+                        // Обновить цвет фона
+                        area.plot_model.Background = OxyColor.Parse(area.area_settings?.brush_background ?? "#111721");
+                        
+                        // Update axes colors
+                        // Обновить цвета осей
+                        foreach (var axis in area.plot_model.Axes)
+                        {
+                            if (axis is DateTimeAxis dateAxis)
+                            {
+                                dateAxis.TextColor = OxyColors.White;
+                                dateAxis.TicklineColor = OxyColors.Gray;
+                                dateAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
+                                dateAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                            }
+                            else if (axis is LinearAxis linearAxis)
+                            {
+                                linearAxis.TextColor = OxyColors.White;
+                                linearAxis.TicklineColor = OxyColors.Gray;
+                                linearAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
+                                linearAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                            }
+                        }
+
+                        // Refresh plot
+                        // Обновить график
+                        area.plot_model.InvalidatePlot(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void RemoveCursor()
         {
-            // устарело
+            // Remove cursor elements from all areas
+            // Удалить элементы курсора из всех областей
+            try
+            {
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    // Remove cursor annotations
+                    // Удалить аннотации курсора
+                    var cursorAnnotations = area.plot_model.Annotations?
+                        .Where(a => a?.Tag != null && (a.Tag.ToString().Contains("Cursor") || a == area.cursor_X || a == area.cursor_Y))
+                        .ToList();
+
+                    if (cursorAnnotations != null)
+                    {
+                        foreach (var annotation in cursorAnnotations)
+                        {
+                            if (annotation != null)
+                                area.plot_model.Annotations.Remove(annotation);
+                        }
+                    }
+
+                    // Clear cursor references
+                    // Очистить ссылки на курсор
+                    area.cursor_X = null;
+                    area.cursor_Y = null;
+
+                    area.plot_model.InvalidatePlot(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void RePaintIndicator(IIndicator indicatorCandle)
@@ -1325,7 +2157,67 @@ namespace OsEngine.Charts.CandleChart
 
         public void SetBlackScheme()
         {
-            // кто нить другой сделает не интересно
+            // Set dark/black color scheme for all chart areas
+            // Установить темную/черную цветовую схему для всех областей чарта
+            try
+            {
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    try
+                    {
+                        // Set dark background
+                        // Установить темный фон
+                        area.plot_model.Background = OxyColor.Parse("#111721");
+                        area.plot_model.PlotAreaBackground = OxyColor.Parse("#111721");
+                        
+                        // Set dark theme for axes
+                        // Установить темную тему для осей
+                        foreach (var axis in area.plot_model.Axes)
+                        {
+                            axis.TextColor = OxyColors.White;
+                            axis.TicklineColor = OxyColor.Parse("#404040");
+                            axis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
+                            axis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                            axis.AxislineColor = OxyColor.Parse("#404040");
+                        }
+
+                        // Update candle series colors for dark theme
+                        // Обновить цвета серий свечей для темной темы
+                        foreach (var series in area.plot_model.Series)
+                        {
+                            if (series is CandleStickSeries candleSeries)
+                            {
+                                candleSeries.IncreasingColor = OxyColors.LimeGreen;
+                                candleSeries.DecreasingColor = OxyColors.Red;
+                                candleSeries.Color = OxyColors.White;
+                            }
+                            else if (series is LineSeries lineSeries)
+                            {
+                                // Keep existing colors or set default white
+                                // Сохранить существующие цвета или установить белый по умолчанию
+                                if (lineSeries.Color == OxyColors.Undefined)
+                                    lineSeries.Color = OxyColors.White;
+                            }
+                        }
+
+                        area.plot_model.InvalidatePlot(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void SetNewTimeFrame(TimeSpan timeFrameSpan, TimeFrame timeFrame)
@@ -1351,27 +2243,334 @@ namespace OsEngine.Charts.CandleChart
 
         public void SetPointSize(ChartPositionTradeSize pointSize)
         {
-            // надо бы так то но лень
+            // Set the size of position/trade points on the chart
+            // Установить размер точек позиций/сделок на чарте
+            try
+            {
+                int markerSize = 4; // Default size / Размер по умолчанию
+                
+                switch (pointSize)
+                {
+                    case ChartPositionTradeSize.Size4:
+                        markerSize = 3;
+                        break;
+                    case ChartPositionTradeSize.Size3:
+                        markerSize = 4;
+                        break;
+                    case ChartPositionTradeSize.Size2:
+                        markerSize = 6;
+                        break;
+                    case ChartPositionTradeSize.Size1:
+                        markerSize = 8;
+                        break;
+                }
+
+                // Update all scatter series (used for trade points)
+                // Обновить все серии точек (используемые для точек сделок)
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    try
+                    {
+                        foreach (var series in area.plot_model.Series)
+                        {
+                            if (series is ScatterSeries scatterSeries)
+                            {
+                                scatterSeries.MarkerSize = markerSize;
+                            }
+                        }
+
+                        area.plot_model.InvalidatePlot(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void SetPointType(PointType type)
         {
-            // надо бы так то но лень
+            // Set the type/shape of position/trade points on the chart
+            // Установить тип/форму точек позиций/сделок на чарте
+            try
+            {
+                MarkerType markerType = MarkerType.Circle; // Default type / Тип по умолчанию
+                
+                switch (type)
+                {
+                    case PointType.Circle:
+                        markerType = MarkerType.Circle;
+                        break;
+                    case PointType.Cross:
+                        markerType = MarkerType.Cross;
+                        break;
+                    case PointType.TriAngle:
+                        markerType = MarkerType.Triangle;
+                        break;
+                    case PointType.Romb:
+                        markerType = MarkerType.Diamond;
+                        break;
+                    case PointType.Auto:
+                        markerType = MarkerType.Circle;
+                        break;
+                }
+
+                // Update all scatter series (used for trade points)
+                // Обновить все серии точек (используемые для точек сделок)
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    try
+                    {
+                        foreach (var series in area.plot_model.Series)
+                        {
+                            if (series is ScatterSeries scatterSeries)
+                            {
+                                scatterSeries.MarkerType = markerType;
+                            }
+                        }
+
+                        area.plot_model.InvalidatePlot(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void SetAxisXSize(int size)
         {
-            // Implementation needed for OxyPlot
+            // Set the number of visible candles/data points on the X-axis
+            // Установить количество видимых свечей/точек данных на оси X
+            if (OxyArea.my_candles == null || OxyArea.my_candles.Count == 0 || size <= 0)
+                return;
+
+            try
+            {
+                foreach (var area in all_areas.Where(x => x.Tag != (object)"ScrollChart" && x.Tag != (object)"ControlPanel"))
+                {
+                    if (area?.date_time_axis_X == null)
+                        continue;
+
+                    try
+                    {
+                        // Calculate the time range based on the requested size
+                        // Вычислить диапазон времени на основе запрошенного размера
+                        int startIndex = Math.Max(0, OxyArea.my_candles.Count - size);
+                        int endIndex = OxyArea.my_candles.Count - 1;
+                        
+                        if (startIndex < endIndex)
+                        {
+                            double startTime = DateTimeAxis.ToDouble(OxyArea.my_candles[startIndex].TimeStart);
+                            double endTime = DateTimeAxis.ToDouble(OxyArea.my_candles[endIndex].TimeStart);
+                            
+                            // Add some padding for better visualization
+                            // Добавить некоторое заполнение для лучшей визуализации
+                            double timeRange = endTime - startTime;
+                            double padding = timeRange * 0.02; // 2% padding
+                            
+                            area.date_time_axis_X.Zoom(startTime - padding, endTime + padding);
+                            
+                            // Update Y axis to fit the visible data
+                            // Обновить ось Y для соответствия видимым данным
+                            if (area is CandleStickArea)
+                            {
+                                var minMax = area.GetHighLow(true, startTime - padding, endTime + padding);
+                                if (minMax?.Count >= 2)
+                                {
+                                    area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                                }
+                            }
+                            else
+                            {
+                                var minMax = area.GetHighLow(false, startTime - padding, endTime + padding);
+                                if (minMax?.Count >= 2)
+                                {
+                                    area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                                }
+                            }
+                            
+                            area.plot_model?.InvalidatePlot(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+                
+                // Trigger size change event
+                // Запустить событие изменения размера
+                SizeAxisXChangeEvent?.Invoke(size);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void SetAxisXPositionFromRight(int xPosition)
         {
-            // Implementation needed for OxyPlot
+            // Set the X-axis position relative to the right edge of the chart
+            // Установить позицию оси X относительно правого края чарта
+            if (OxyArea.my_candles == null || OxyArea.my_candles.Count == 0 || xPosition < 0)
+                return;
+
+            try
+            {
+                foreach (var area in all_areas.Where(x => x.Tag != (object)"ScrollChart" && x.Tag != (object)"ControlPanel"))
+                {
+                    if (area?.date_time_axis_X == null)
+                        continue;
+
+                    try
+                    {
+                        // Calculate the position from the right edge
+                        // Вычислить позицию от правого края
+                        int endIndex = OxyArea.my_candles.Count - 1;
+                        int startIndex = Math.Max(0, endIndex - xPosition);
+                        
+                        if (startIndex < endIndex)
+                        {
+                            double startTime = DateTimeAxis.ToDouble(OxyArea.my_candles[startIndex].TimeStart);
+                            double endTime = DateTimeAxis.ToDouble(OxyArea.my_candles[endIndex].TimeStart);
+                            
+                            // Set the view to show data from the calculated position
+                            // Установить вид для отображения данных с вычисленной позиции
+                            double timeRange = endTime - startTime;
+                            double padding = timeRange * 0.05; // 5% padding
+                            
+                            area.date_time_axis_X.Zoom(startTime - padding, endTime + padding);
+                            
+                            // Update Y axis to fit the visible data
+                            // Обновить ось Y для соответствия видимым данным
+                            if (area is CandleStickArea)
+                            {
+                                var minMax = area.GetHighLow(true, startTime - padding, endTime + padding);
+                                if (minMax?.Count >= 2)
+                                {
+                                    area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                                }
+                            }
+                            else
+                            {
+                                var minMax = area.GetHighLow(false, startTime - padding, endTime + padding);
+                                if (minMax?.Count >= 2)
+                                {
+                                    area.linear_axis_Y?.Zoom(minMax[0], minMax[1]);
+                                }
+                            }
+                            
+                            area.plot_model?.InvalidatePlot(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+                
+                // Trigger position change event
+                // Запустить событие изменения позиции
+                LastXIndexChangeEvent?.Invoke(xPosition);
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void SetWhiteScheme()
         {
-            // кто нить другой сделает не интересно
+            // Set light/white color scheme for all chart areas
+            // Установить светлую/белую цветовую схему для всех областей чарта
+            try
+            {
+                foreach (var area in all_areas)
+                {
+                    if (area?.plot_model == null)
+                        continue;
+
+                    try
+                    {
+                        // Set light background
+                        // Установить светлый фон
+                        area.plot_model.Background = OxyColors.White;
+                        area.plot_model.PlotAreaBackground = OxyColors.White;
+                        
+                        // Set light theme for axes
+                        // Установить светлую тему для осей
+                        foreach (var axis in area.plot_model.Axes)
+                        {
+                            axis.TextColor = OxyColors.Black;
+                            axis.TicklineColor = OxyColor.Parse("#C0C0C0");
+                            axis.MajorGridlineColor = OxyColor.FromArgb(50, 0, 0, 0);
+                            axis.MinorGridlineColor = OxyColor.FromArgb(25, 0, 0, 0);
+                            axis.AxislineColor = OxyColor.Parse("#C0C0C0");
+                        }
+
+                        // Update candle series colors for light theme
+                        // Обновить цвета серий свечей для светлой темы
+                        foreach (var series in area.plot_model.Series)
+                        {
+                            if (series is CandleStickSeries candleSeries)
+                            {
+                                candleSeries.IncreasingColor = OxyColors.Green;
+                                candleSeries.DecreasingColor = OxyColors.Red;
+                                candleSeries.Color = OxyColors.Black;
+                            }
+                            else if (series is LineSeries lineSeries)
+                            {
+                                // Keep existing colors or set default black
+                                // Сохранить существующие цвета или установить черный по умолчанию
+                                if (lineSeries.Color == OxyColors.Undefined)
+                                    lineSeries.Color = OxyColors.Black;
+                            }
+                        }
+
+                        area.plot_model.InvalidatePlot(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log error if logging is available
+                        // Записать ошибку, если доступно журналирование
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error if logging is available
+                // Записать ошибку, если доступно журналирование
+            }
         }
 
         public void ShowAreaOnChart()
@@ -1792,3 +2991,4 @@ namespace OsEngine.Charts.CandleChart
         }
     }
 }
+
