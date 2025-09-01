@@ -1631,38 +1631,39 @@ namespace OsEngine.Charts.CandleChart
                         // Обновить цвет фона
                         area.plot_model.Background = OxyColor.Parse(area.area_settings?.brush_background ?? "#111721");
                         
-                        // Update axes colors without aggressive formatting
-                        // Обновить цвета осей без агрессивного форматирования
-                        foreach (var axis in area.plot_model.Axes)
+                        // Handle X-axis visibility - only show on Prime chart area
+                        // Обработать видимость оси X - показывать только на основной области чарта
+                        var dateAxis = area.plot_model.Axes.OfType<DateTimeAxis>().FirstOrDefault();
+                        if (dateAxis != null)
                         {
-                            // Clear any duplicate labels or formatting
-                            // Очистить любые дублирующиеся метки или форматирование
-                            axis.LabelFormatter = null;
-                            
-                            if (axis is DateTimeAxis dateAxis)
+                            if (area is CandleStickArea)
                             {
+                                // Show X-axis on Prime chart area
+                                // Показать ось X на основной области чарта
+                                dateAxis.IsAxisVisible = true;
                                 dateAxis.TextColor = OxyColors.White;
                                 dateAxis.TicklineColor = OxyColors.Gray;
                                 dateAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
                                 dateAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
-                                
-                                // Prevent X-axis duplication
-                                // Предотвратить дублирование оси X
-                                dateAxis.StringFormat = "HH:mm"; // Simple time format
-                                dateAxis.MajorStep = 1.0 / 24.0; // 1 hour steps
-                                dateAxis.MinorStep = 1.0 / 96.0; // 15 minute steps
                             }
-                            else if (axis is LinearAxis linearAxis)
+                            else
+                            {
+                                // Hide X-axis on indicator areas
+                                // Скрыть ось X на областях индикаторов
+                                dateAxis.IsAxisVisible = false;
+                            }
+                        }
+                        
+                        // Update Y-axes colors (always visible)
+                        // Обновить цвета осей Y (всегда видимые)
+                        foreach (var axis in area.plot_model.Axes)
+                        {
+                            if (axis is LinearAxis linearAxis)
                             {
                                 linearAxis.TextColor = OxyColors.White;
                                 linearAxis.TicklineColor = OxyColors.Gray;
                                 linearAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
                                 linearAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
-                                
-                                // Prevent Y-axis duplication
-                                // Предотвратить дублирование оси Y
-                                linearAxis.MajorStep = double.NaN; // Auto-calculate steps
-                                linearAxis.MinorStep = double.NaN;
                             }
                         }
 
@@ -2247,19 +2248,42 @@ namespace OsEngine.Charts.CandleChart
                         area.plot_model.Background = OxyColor.Parse("#111721");
                         area.plot_model.PlotAreaBackground = OxyColor.Parse("#111721");
                         
-                        // Set dark theme for axes
-                        // Установить темную тему для осей
+                        // Handle X-axis visibility - only show on Prime chart area
+                        // Обработать видимость оси X - показывать только на основной области чарта
+                        var dateAxis = area.plot_model.Axes.OfType<DateTimeAxis>().FirstOrDefault();
+                        if (dateAxis != null)
+                        {
+                            if (area is CandleStickArea)
+                            {
+                                // Show X-axis on Prime chart area
+                                // Показать ось X на основной области чарта
+                                dateAxis.IsAxisVisible = true;
+                                dateAxis.TextColor = OxyColors.White;
+                                dateAxis.TicklineColor = OxyColor.Parse("#404040");
+                                dateAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
+                                dateAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                                dateAxis.AxislineColor = OxyColor.Parse("#404040");
+                            }
+                            else
+                            {
+                                // Hide X-axis on indicator areas
+                                // Скрыть ось X на областях индикаторов
+                                dateAxis.IsAxisVisible = false;
+                            }
+                        }
+                        
+                        // Set dark theme for Y-axes (always visible)
+                        // Установить темную тему для осей Y (всегда видимые)
                         foreach (var axis in area.plot_model.Axes)
                         {
-                            // Clear any duplicate labels or formatting
-                            // Очистить любые дублирующиеся метки или форматирование
-                            axis.LabelFormatter = null;
-                            
-                            axis.TextColor = OxyColors.White;
-                            axis.TicklineColor = OxyColor.Parse("#404040");
-                            axis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
-                            axis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
-                            axis.AxislineColor = OxyColor.Parse("#404040");
+                            if (axis is LinearAxis linearAxis)
+                            {
+                                linearAxis.TextColor = OxyColors.White;
+                                linearAxis.TicklineColor = OxyColor.Parse("#404040");
+                                linearAxis.MajorGridlineColor = OxyColor.FromArgb(50, 255, 255, 255);
+                                linearAxis.MinorGridlineColor = OxyColor.FromArgb(25, 255, 255, 255);
+                                linearAxis.AxislineColor = OxyColor.Parse("#404040");
+                            }
                         }
 
                         // Update candle series colors for dark theme
@@ -2604,29 +2628,41 @@ namespace OsEngine.Charts.CandleChart
                         area.plot_model.Background = OxyColors.White;
                         area.plot_model.PlotAreaBackground = OxyColors.White;
                         
-                        // Set light theme for axes with better contrast but no aggressive formatting
-                        // Установить светлую тему для осей с лучшим контрастом, но без агрессивного форматирования
+                        // Handle X-axis visibility - only show on Prime chart area
+                        // Обработать видимость оси X - показывать только на основной области чарта
+                        var dateAxis = area.plot_model.Axes.OfType<DateTimeAxis>().FirstOrDefault();
+                        if (dateAxis != null)
+                        {
+                            if (area is CandleStickArea)
+                            {
+                                // Show X-axis on Prime chart area
+                                // Показать ось X на основной области чарта
+                                dateAxis.IsAxisVisible = true;
+                                dateAxis.TextColor = OxyColors.Black;
+                                dateAxis.TicklineColor = OxyColor.Parse("#808080"); // Darker gray for better contrast
+                                dateAxis.MajorGridlineColor = OxyColor.FromArgb(80, 0, 0, 0); // Stronger grid lines
+                                dateAxis.MinorGridlineColor = OxyColor.FromArgb(40, 0, 0, 0);
+                                dateAxis.AxislineColor = OxyColor.Parse("#404040"); // Darker axis lines
+                            }
+                            else
+                            {
+                                // Hide X-axis on indicator areas
+                                // Скрыть ось X на областях индикаторов
+                                dateAxis.IsAxisVisible = false;
+                            }
+                        }
+                        
+                        // Set light theme for Y-axes (always visible)
+                        // Установить светлую тему для осей Y (всегда видимые)
                         foreach (var axis in area.plot_model.Axes)
                         {
-                            axis.TextColor = OxyColors.Black;
-                            axis.TicklineColor = OxyColor.Parse("#808080"); // Darker gray for better contrast
-                            axis.MajorGridlineColor = OxyColor.FromArgb(80, 0, 0, 0); // Stronger grid lines
-                            axis.MinorGridlineColor = OxyColor.FromArgb(40, 0, 0, 0);
-                            axis.AxislineColor = OxyColor.Parse("#404040"); // Darker axis lines
-                            
-                            // Use auto-calculated steps to prevent overlap
-                            // Использовать автоматически рассчитанные шаги для предотвращения перекрытия
-                            if (axis is DateTimeAxis dateAxis)
+                            if (axis is LinearAxis linearAxis)
                             {
-                                dateAxis.MajorStep = double.NaN;
-                                dateAxis.MinorStep = double.NaN;
-                                dateAxis.LabelFormatter = null;
-                            }
-                            else if (axis is LinearAxis linearAxis)
-                            {
-                                linearAxis.MajorStep = double.NaN;
-                                linearAxis.MinorStep = double.NaN;
-                                linearAxis.LabelFormatter = null;
+                                linearAxis.TextColor = OxyColors.Black;
+                                linearAxis.TicklineColor = OxyColor.Parse("#808080"); // Darker gray for better contrast
+                                linearAxis.MajorGridlineColor = OxyColor.FromArgb(80, 0, 0, 0); // Stronger grid lines
+                                linearAxis.MinorGridlineColor = OxyColor.FromArgb(40, 0, 0, 0);
+                                linearAxis.AxislineColor = OxyColor.Parse("#404040"); // Darker axis lines
                             }
                         }
 
