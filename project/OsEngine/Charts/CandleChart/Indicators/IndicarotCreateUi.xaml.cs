@@ -196,14 +196,18 @@ namespace OsEngine.Charts.CandleChart.Indicators
 
                 if (areaName == "NewArea")
                 {
-                    for (int i = 0; i < 30; i++)
+                    // Refresh the areas list to get the most current state
+                    RefreshAreasList();
+                    
+                    // Find the next available NewArea name
+                    int nextIndex = 0;
+                    while (_chartMaster.AreaIsCreate("NewArea" + nextIndex))
                     {
-                        if (_chartMaster.AreaIsCreate("NewArea" + i) == false)
-                        {
-                            areaName = "NewArea" + i;
+                        nextIndex++;
+                        if (nextIndex >= 100) // Safety limit
                             break;
-                        }
                     }
+                    areaName = "NewArea" + nextIndex;
                 }
 
                 if (_gridViewIndicators.SelectedCells[0].Value.ToString() == "TickVolume")
@@ -1035,17 +1039,21 @@ namespace OsEngine.Charts.CandleChart.Indicators
         {
             string areaName = _gridViewAreas.SelectedCells[0].Value.ToString();
 
-            if (areaName == "NewArea")
-            {
-                for (int i = 0; i < 30; i++)
-                {
-                    if (_chartMaster.AreaIsCreate("NewArea" + i) == false)
-                    {
-                        areaName = "NewArea" + i;
-                        break;
-                    }
-                }
-            }
+                                                         if (areaName == "NewArea")
+                 {
+                     // Refresh the areas list to get the most current state
+                     RefreshAreasList();
+                     
+                     // Find the next available NewArea name
+                     int nextIndex = 0;
+                     while (_chartMaster.AreaIsCreate("NewArea" + nextIndex))
+                     {
+                         nextIndex++;
+                         if (nextIndex >= 100) // Safety limit
+                             break;
+                     }
+                     areaName = "NewArea" + nextIndex;
+                 }
 
             string indicatorName = _gridNamesScript.SelectedCells[0].Value.ToString();
 
@@ -1068,6 +1076,36 @@ namespace OsEngine.Charts.CandleChart.Indicators
             if (IndicatorCandle != null)
             {
                 IndicatorCandle.ShowDialog();
+            }
+        }
+
+        private void RefreshAreasList()
+        {
+            try
+            {
+                // Clear existing areas (except NewArea)
+                _gridViewAreas.Rows.Clear();
+                
+                // Get the current list of areas from the chart master
+                List<string> areas = _chartMaster.GetChartAreas();
+
+                // Add existing areas
+                for (int i = 0; i < areas.Count; i++)
+                {
+                    if (areas[i] != "TradeArea")
+                    {
+                        int rowIndex = _gridViewAreas.Rows.Add();
+                        _gridViewAreas.Rows[rowIndex].Cells[0].Value = areas[i];
+                    }
+                }
+
+                // Add the NewArea option at the end
+                _gridViewAreas.Rows.Add("NewArea");
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBoxUi ui = new CustomMessageBoxUi(ex.ToString());
+                ui.ShowDialog();
             }
         }
 

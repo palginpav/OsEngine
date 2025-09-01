@@ -18,6 +18,7 @@ using OsEngine.Indicators;
 using OsEngine.Language;
 using OsEngine.Logging;
 using OsEngine.Market;
+using OsEngine.PrimeSettings;
 
 namespace OsEngine.Charts.CandleChart
 {
@@ -58,12 +59,28 @@ namespace OsEngine.Charts.CandleChart
                 ChartCandle.SizeAxisXChangeEvent -= ChartCandle_SizeAxisXChangeEvent;
                 ChartCandle.LastXIndexChangeEvent -= ChartCandle_LastXIndexChangeEvent;
             }
-            ChartCandle = new WinFormsChartPainter(_name, _startProgram);
+            // Create chart painter based on settings
+            if (PrimeSettingsMaster.ChartType == ChartType.OxyPlot)
+            {
+                ChartCandle = new OxyChartPainter(_name, _startProgram);
+            }
+            else
+            {
+                ChartCandle = new WinFormsChartPainter(_name, _startProgram);
+            }
+            
             ChartCandle.ChartClickEvent += ChartCandle_ChartClickEvent;
             ChartCandle.LogMessageEvent += NewLogMessage;
             ChartCandle.ClickToIndexEvent += _chartCandle_ClickToIndexEvent;
             ChartCandle.SizeAxisXChangeEvent += ChartCandle_SizeAxisXChangeEvent;
             ChartCandle.LastXIndexChangeEvent += ChartCandle_LastXIndexChangeEvent;
+            
+            // Connect to OxyPlot specific events for real-time updates
+            if (ChartCandle is OxyChartPainter oxyPainter)
+            {
+                oxyPainter.UpdateCandlesEvent += OnCandlesUpdated;
+                oxyPainter.UpdateIndicatorEvent += OnIndicatorsUpdated;
+            }
             SetNewTimeFrameToChart(_timeFrameBuilder);  //AVP добавил, чтоб ChartCandle знал, с каким он таймфреймом. (Это важно для скринера, с отложенным созданием Чарта)  
 
             if (_indicators != null)
@@ -71,6 +88,15 @@ namespace OsEngine.Charts.CandleChart
                 for (int i = 0; i < _indicators.Count; i++)
                 {
                     LoadIndicatorOnChart(_indicators[i]);
+                }
+
+                // Ensure all indicators are properly processed after loading
+                for (int i = 0; i < _indicators.Count; i++)
+                {
+                    if (ChartCandle != null)
+                    {
+                        ChartCandle.ProcessIndicator(_indicators[i]);
+                    }
                 }
             }
 
@@ -576,6 +602,30 @@ namespace OsEngine.Charts.CandleChart
             }
 
             _bindChart.SetAxisXPositionFromRight(curXFromRight);
+        }
+
+        private void OnCandlesUpdated()
+        {
+            // Trigger indicator updates when candles are updated
+            if (_indicators != null)
+            {
+                for (int i = 0; i < _indicators.Count; i++)
+                {
+                    if (_indicators[i].PaintOn)
+                    {
+                        ChartCandle.ProcessIndicator(_indicators[i]);
+                    }
+                }
+            }
+        }
+
+        private void OnIndicatorsUpdated()
+        {
+            // Force chart refresh when indicators are updated
+            if (ChartCandle is OxyChartPainter oxyPainter)
+            {
+                // The chart painter will handle the refresh internally
+            }
         }
 
         private void CheckBindAreaSize(int size)
@@ -1166,6 +1216,12 @@ namespace OsEngine.Charts.CandleChart
 
             Save();
             ReloadContext();
+
+            // Ensure the indicator is properly processed after loading
+            if (ChartCandle != null)
+            {
+                ChartCandle.ProcessIndicator(indicator);
+            }
         }
 
         /// <summary>
@@ -1926,6 +1982,13 @@ namespace OsEngine.Charts.CandleChart
             {
                 ChartCandle.ClearDataPointsAndSizeValue();
                 SetNewTimeFrameToChart(timeFrameBuilder);   //AVP  рефакторинг, чтоб нижний код два раза не повторялся.
+                
+                // Notify the chart painter about the trading context change for robust indicator updates
+                // Уведомить художника чарта об изменении торгового контекста для надежного обновления индикаторов
+                if (ChartCandle is OxyChartPainter oxyPainter)
+                {
+                    oxyPainter.SetCurrentTradingContext(serverType, security, timeFrameBuilder.TimeFrame);
+                }
             }
 
             string lastSecurity = _securityOnThisChart;
