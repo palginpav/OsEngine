@@ -47,6 +47,12 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         public double X_start = 0;
         public double X_end = 0;
 
+        // Single click detection variables
+        // Переменные для обнаружения одиночного клика
+        private OxyPlot.DataPoint lastRightClickPosition = new OxyPlot.DataPoint();
+        private const double CLICK_MOVEMENT_THRESHOLD = 5.0; // pixels - maximum allowed movement
+        // пиксели - максимально допустимое движение
+
         public bool mouse_on_main_chart = false;
         public bool has_candles = false;
 
@@ -97,6 +103,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             plot_model.MouseDown += Plot_model_MouseDown;
             plot_model.MouseUp += Plot_model_MouseUp;
 
+            // Initialize the last click position to avoid issues with the first click
+            // Инициализировать позицию последнего клика, чтобы избежать проблем с первым кликом
+            lastRightClickPosition = new OxyPlot.DataPoint(double.MinValue, double.MinValue);
+
         }
 
         private void Plot_model_MouseUp(object sender, OxyMouseEventArgs e)
@@ -110,8 +120,29 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             if (e.ChangedButton == OxyMouseButton.Right)
             {
                 mouse_point = new DataPoint(e.Position.X, e.Position.Y);
+                
+                // Check if this is a single click without significant movement
+                // Проверить, является ли это одиночным кликом без значительного движения
+                double distance = Math.Sqrt(
+                    Math.Pow(e.Position.X - lastRightClickPosition.X, 2) + 
+                    Math.Pow(e.Position.Y - lastRightClickPosition.Y, 2));
+                
+                if (distance <= CLICK_MOVEMENT_THRESHOLD)
+                {
+                    // Single click without movement detected - show context menu
+                    // Одиночный клик без движения обнаружен - показать контекстное меню
+                    owner.MainChartMouseButtonClick(ChartClickType.RightButton);
+                    owner.mediator.RedrawControlPanel(false);
+                    e.Handled = true;
+                }
+                
+                // Update the last click position for next comparison
+                // Обновить позицию последнего клика для следующего сравнения
+                lastRightClickPosition = new DataPoint(e.Position.X, e.Position.Y);
             }
         }
+
+
 
         private void Plot_model_Updated(object sender, EventArgs e)
         {

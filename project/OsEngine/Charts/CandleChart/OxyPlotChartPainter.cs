@@ -58,6 +58,8 @@ namespace OsEngine.Charts.CandleChart
         public List<IndicatorSeria> series = new List<IndicatorSeria>();
         private List<OxyArea> all_areas = new List<OxyArea>();
 
+
+
         public event Action UpdateCandlesEvent;
         public event Action UpdateIndicatorEvent;
 
@@ -108,6 +110,8 @@ namespace OsEngine.Charts.CandleChart
 
         public void MainChartMouseButtonClick(ChartClickType click_type)
         {
+            // Invoke the chart click event
+            // Вызвать событие клика по графику
             ChartClickEvent?.Invoke(click_type);
         }
 
@@ -2738,13 +2742,14 @@ namespace OsEngine.Charts.CandleChart
                     row.Height = new GridLength(1, GridUnitType.Star);
             }
         }
+        
 
         public void ShowContextMenu(System.Windows.Forms.ContextMenuStrip menu)
         {
             if (panel_winforms == null)
                 return;
 
-            menu.Show(panel_winforms, new System.Drawing.Point(0, 0));
+            menu.Show(panel_winforms, new System.Drawing.Point(panel_winforms.Width / 2, panel_winforms.Height / 2));
         }
 
         public void StartPaintPrimeChart(System.Windows.Controls.Grid grid_chart, WindowsFormsHost host, System.Windows.Shapes.Rectangle rectangle)

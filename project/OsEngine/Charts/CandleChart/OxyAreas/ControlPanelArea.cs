@@ -20,43 +20,17 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         public CustomTextAnnotation plus_button;
         public CustomTextAnnotation speed_state_lable;
 
-        public CustomTextAnnotation percent_button;
-        public CustomTextAnnotation menu_button;
-
-        public ScreenPoint pos_persent;
-
         public ControlPanelArea(OxyAreaSettings settings, List<OxyArea> all_areas, OxyChartPainter owner) : base(settings, owner)
         {
+            // Don't display control panel if StartProgram.IsOsTrader
+            // Не отображать панель управления, если StartProgram.IsOsTrader
+            if (owner.start_program == StartProgram.IsOsTrader)
+            {
+                return;
+            }
 
             area_settings = settings;
             this.all_areas = all_areas;
-
-            percent_button = new CustomTextAnnotation()
-            {
-                Background = OxyColors.Transparent,
-                Stroke = OxyColor.Parse("#FF5500"),
-                StrokeThickness = 1,
-                Text = "%",
-                TextVerticalAlignment = VerticalAlignment.Bottom,
-                TextHorizontalAlignment = HorizontalAlignment.Left,
-                Layer = AnnotationLayer.AboveSeries,
-                Padding = new OxyThickness(3, 0, 3, 1),
-
-            };
-
-            menu_button = new CustomTextAnnotation()
-            {
-                Background = OxyColors.Transparent,
-                Stroke = OxyColor.Parse("#FF5500"),
-                StrokeThickness = 1,
-                Text = "MENU",
-                TextVerticalAlignment = VerticalAlignment.Bottom,
-                TextHorizontalAlignment = HorizontalAlignment.Left,
-                Layer = AnnotationLayer.AboveSeries,
-                Padding = new OxyThickness(3, 0, 3, 1),
-
-            };
-
 
             if (owner.start_program == StartProgram.IsTester)
             {
@@ -113,10 +87,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 };
             }
 
-            plot_model.Annotations.Add(percent_button);
-            plot_model.Annotations.Add(menu_button);
-
-
             if (owner.start_program == StartProgram.IsTester)
             {
                 plot_model.Annotations.Add(speed_lable);
@@ -131,10 +101,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 plus_button.MouseUp += Plus_button_MouseUp;
             }
 
-            percent_button.MouseDown += Percent_button_MouseDown;
-            menu_button.MouseDown += Menu_button_MouseDown;
-            menu_button.MouseUp += Menu_button_MouseUp;
-
             plot_model.Updated += Plot_model_Updated;
             plot_model.MouseDown += Plot_model_MouseDown;
         }
@@ -142,30 +108,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         private void Plot_model_MouseDown(object sender, OxyMouseDownEventArgs e)
         {
             owner.mediator.RedrawControlPanel( false);
-
-            e.Handled = true;
-        }
-
-        private void Menu_button_MouseUp(object sender, OxyMouseEventArgs e)
-        {
-            if (sender != null)
-            {
-                menu_button.Background = OxyColors.Transparent;
-                owner.MainChartMouseButtonClick(ChartClickType.RightButton);
-
-                owner.mediator.RedrawControlPanel( false);
-            }
-
-            e.Handled = true;
-        }
-
-        private void Menu_button_MouseDown(object sender, OxyMouseDownEventArgs e)
-        {
-            if (sender != null)
-            {
-                menu_button.Background = OxyColor.Parse("#FF5500");
-            }
-            owner.mediator.RedrawControlPanel(false);
 
             e.Handled = true;
         }
@@ -193,44 +135,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 minus_button.Background = OxyColors.Transparent;
             }
 
-            owner.mediator.RedrawControlPanel(false);
-            e.Handled = true;
-        }
-
-        private void Percent_button_MouseDown(object sender, OxyMouseDownEventArgs e)
-        {
-            if (sender != null)
-            {
-                var main_chart = (CandleStickArea)all_areas.Find(x => (string)x.Tag == "Prime");
-
-                if (main_chart.axis_Y_type == "linear")
-                {
-                    percent_button.Background = OxyColor.Parse("#FF5500");
-                    main_chart.axis_Y_type = "percent";
-
-                    if (!main_chart.isFreeze)
-                        main_chart.Dispose();
-                    else
-                    {
-                        ((CandleStickArea)main_chart).scatter_series_list = new List<ScatterSeries>();
-                        ((CandleStickArea)main_chart).lines_series_list = new List<LineSeries>();
-                        ((CandleStickArea)main_chart).linear_bar_series_list = new List<LinearBarSeries>();
-                    }
-                }
-
-                else if (main_chart.axis_Y_type == "percent")
-                {
-                    percent_button.Background = OxyColors.Transparent;
-                    main_chart.axis_Y_type = "linear";
-
-                    if (!main_chart.isFreeze)
-                        main_chart.Dispose();
-                    else
-                    {
-                        main_chart.Dispose();
-                    }
-                }
-            }
             owner.mediator.RedrawControlPanel(false);
             e.Handled = true;
         }
@@ -278,25 +182,13 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             if (owner.start_program == StartProgram.IsTester)
             {
-                if (speed_lable == null || minus_button == null || plus_button == null || speed_state_lable == null || percent_button == null || menu_button == null)
+                if (speed_lable == null || minus_button == null || plus_button == null || speed_state_lable == null)
                     return;
 
                 speed_lable.TextPosition = new ScreenPoint(20, plot_view.ActualHeight - 20);
                 minus_button.TextPosition = new ScreenPoint(65, plot_view.ActualHeight - 20);
                 plus_button.TextPosition = new ScreenPoint(80, plot_view.ActualHeight - 20);
                 speed_state_lable.TextPosition = new ScreenPoint(100, plot_view.ActualHeight - 20);
-
-                percent_button.TextPosition = new ScreenPoint(plot_view.ActualWidth - 25, plot_view.ActualHeight - 20);
-                menu_button.TextPosition = new ScreenPoint(plot_view.ActualWidth - 80, plot_view.ActualHeight - 20);
-            }
-
-            if (owner.start_program == StartProgram.IsOsTrader)
-            {
-                if (percent_button == null || menu_button == null)
-                    return;
-
-                percent_button.TextPosition = new ScreenPoint(plot_view.ActualWidth - 25, plot_view.ActualHeight - 20);
-                menu_button.TextPosition = new ScreenPoint(plot_view.ActualWidth - 80, plot_view.ActualHeight - 20);
             }
         }
 
