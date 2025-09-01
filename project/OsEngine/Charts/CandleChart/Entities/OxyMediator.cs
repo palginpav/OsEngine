@@ -78,13 +78,16 @@ namespace OsEngine.Charts.CandleChart.Entities
             
             // Check if any indicator series have different data point counts than candles
             // This indicates that indicators need to be recalculated due to data changes
+            // Это означает, что индикаторы должны быть пересчитаны из‑за изменений данных
             foreach (var seria in owner.series)
             {
                 if (seria.isHide)
                     continue;
 
-                // If series has data points but count doesn't match candles, 
+                // If series has data points but count doesn't match candles,
                 // this indicates a significant data change (trading pair, timeframe, etc.)
+                // Если у серии есть точки, но их количество не совпадает с количеством свечей,
+                // это указывает на значительное изменение данных (торговая пара, таймфрейм и т.п.)
                 if (seria.DataPoints.Count != 0 && seria.DataPoints.Count != OxyArea.my_candles.Count)
                 {
                     hasIndicatorsToUpdate = true;
@@ -96,6 +99,10 @@ namespace OsEngine.Charts.CandleChart.Entities
             // 1. We have indicators that need updating due to data changes
             // 2. We have no indicators and no prime series (initial state)
             // 3. We need to redraw for other reasons
+            // Принудительно перерисовать если:
+            // 1. Есть индикаторы, требующие обновления из‑за изменений данных
+            // 2. Нет индикаторов и нет серий в Prime (начальное состояние)
+            // 3. Есть другие причины для перерисовки
             if (hasIndicatorsToUpdate || need_to_redraw || (indicators_list.Count == 0 && owner.series.Where(x => x.AreaName == "Prime").Count() == 0))
             {
                 RedrawAll(null);

@@ -60,9 +60,23 @@ namespace OsEngine.Charts.CandleChart
                 ChartCandle.LastXIndexChangeEvent -= ChartCandle_LastXIndexChangeEvent;
             }
             // Create chart painter based on settings
+            // Создать отрисовщик чарта на основе настроек
             if (PrimeSettingsMaster.ChartType == ChartType.OxyPlot)
             {
-                ChartCandle = new OxyChartPainter(_name, _startProgram);
+                try
+                {
+                    ChartCandle = new OxyChartPainter(_name, _startProgram);
+                }
+                catch (System.IO.FileNotFoundException fnf)
+                {
+                    System.Windows.MessageBox.Show($"OxyPlot assembly not found: {fnf.FileName}. Ensure OxyPlot.* DLLs are copied next to OsEngine.exe.");
+                    throw;
+                }
+                catch (TypeInitializationException tie) when (tie.InnerException is System.IO.FileNotFoundException innerFnf && (innerFnf.FileName?.Contains("OxyPlot") ?? false))
+                {
+                    System.Windows.MessageBox.Show($"OxyPlot assembly not found: {innerFnf.FileName}. Ensure OxyPlot.* DLLs are copied next to OsEngine.exe.");
+                    throw;
+                }
             }
             else
             {
@@ -76,6 +90,7 @@ namespace OsEngine.Charts.CandleChart
             ChartCandle.LastXIndexChangeEvent += ChartCandle_LastXIndexChangeEvent;
             
             // Connect to OxyPlot specific events for real-time updates
+            // Подключиться к специфичным событиям OxyPlot для обновлений в реальном времени
             if (ChartCandle is OxyChartPainter oxyPainter)
             {
                 oxyPainter.UpdateCandlesEvent += OnCandlesUpdated;
@@ -91,6 +106,7 @@ namespace OsEngine.Charts.CandleChart
                 }
 
                 // Ensure all indicators are properly processed after loading
+                // Обеспечить корректную обработку всех индикаторов после загрузки
                 for (int i = 0; i < _indicators.Count; i++)
                 {
                     if (ChartCandle != null)

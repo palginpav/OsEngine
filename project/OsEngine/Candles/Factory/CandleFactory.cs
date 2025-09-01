@@ -417,7 +417,21 @@ namespace OsEngine.Candles
             // typeof(BotPanel).Assembly to be more direct.
             Assembly assembly = typeof(BotPanel).Assembly;
             Dictionary<string, Type> candles = new Dictionary<string, Type>();
-            foreach (Type type in assembly.GetTypes())
+
+            // Safely get types from the assembly. Some referenced assemblies (e.g., optional UI libs)
+            // may be missing at startup which can trigger ReflectionTypeLoadException. In that case
+            // we continue with all successfully loaded types to avoid blocking application startup.
+            Type[] types;
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                types = ex.Types != null ? ex.Types.Where(t => t != null).ToArray() : Array.Empty<Type>();
+            }
+
+            foreach (Type type in types)
             {
                 // Ensure type is public and not abstract if it's meant to be instantiated
                 if (type.IsPublic && !type.IsAbstract && typeof(ACandlesSeriesRealization).IsAssignableFrom(type))

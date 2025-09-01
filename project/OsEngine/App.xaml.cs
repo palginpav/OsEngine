@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.IO;
+using System.Reflection;
 
 namespace OsEngine
 {
@@ -16,8 +18,36 @@ namespace OsEngine
         protected override void OnStartup(StartupEventArgs e)
         {
             app = this;
+            // Ensure missing assemblies (e.g., OxyPlot) are resolved from application directory
+            // Гарантировать загрузку отсутствующих сборок (например, OxyPlot) из каталога приложения
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+            {
+                try
+                {
+                    var assemblyName = new AssemblyName(args.Name).Name;
+                    var baseDir = AppDomain.CurrentDomain.BaseDirectory;
 
-            base.OnActivated(e);
+                    // Probe common locations in the app directory
+                    // Проверить типичные места расположения в каталоге приложения
+                    string[] candidates = new[]
+                    {
+                        Path.Combine(baseDir, assemblyName + ".dll"),
+                        Path.Combine(baseDir, assemblyName + ".exe")
+                    };
+
+                    foreach (var path in candidates)
+                    {
+                        if (File.Exists(path))
+                        {
+                            return Assembly.LoadFrom(path);
+                        }
+                    }
+                }
+                catch { /* swallow and return null to let default resolver continue / вернуть null, чтобы разрешить продолжить работу */ }
+                return null;
+            };
+
+            base.OnStartup(e);
         }
 
         void IconMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

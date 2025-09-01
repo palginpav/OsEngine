@@ -37,7 +37,20 @@ namespace OsEngine.Indicators
             // Assumes Aindicator is in OsEngine.Entity or OsEngine.Indicators
             Assembly assembly = typeof(Aindicator).Assembly;
             Dictionary<string, Type> indicators = new Dictionary<string, Type>();
-            foreach (Type type in assembly.GetTypes())
+
+            // Be resilient to missing optional assemblies during reflection (e.g., UI libs like OxyPlot)
+            Type[] types;
+            try
+            {
+                types = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                // Use all successfully loaded types and skip failed ones
+                types = ex.Types != null ? ex.Types.Where(t => t != null).ToArray() : Array.Empty<Type>();
+            }
+
+            foreach (Type type in types)
             {
                 // Ensure type is public, not abstract, and assignable to Aindicator
                 if (type.IsPublic && !type.IsAbstract && typeof(Aindicator).IsAssignableFrom(type))
