@@ -37,7 +37,10 @@
         <Label Name="LabelReportCriticalErrors" Content="Report critical errors" HorizontalAlignment="Left" Margin="79,241,0,0" VerticalAlignment="Top"/>
         <CheckBox Name="CheckBoxReportCriticalErrors" Margin="0,241,56,0" VerticalAlignment="Top" HorizontalAlignment="Right" Width="23"/>
 
-        <TextBox Name="TextBoxMessageToUsers" IsReadOnly="True" Margin="40,280,40,0" TextWrapping="Wrap" Text="Support our common Open Source project and it will become better." VerticalAlignment="Top" Height="56" />
+        <ComboBox Name="ComboBoxChartType" Margin="196,264,56,0" VerticalAlignment="Top" Height="23"/>
+        <Label Name="LabelChartType" Content="Chart type" HorizontalAlignment="Left" Margin="79,264,0,0" VerticalAlignment="Top"/>
+
+        <TextBox Name="TextBoxMessageToUsers" IsReadOnly="True" Margin="40,287,40,0" TextWrapping="Wrap" Text="Support our common Open Source project and it will become better." VerticalAlignment="Top" Height="56" />
         <Label Name="LabelSupportGroupRu" Content="Support group RU:" HorizontalAlignment="Left" Margin="47,350,0,0" VerticalAlignment="Top"/>
         <Label Name="LabelSupportGroupEng" Content="Support group ENG:" HorizontalAlignment="Left" Margin="47,378,0,0" VerticalAlignment="Top"/>
         <Button Name="ButtonGoInRuSupport" Content="Go to" HorizontalAlignment="Right" Margin="0,344,40,0" VerticalAlignment="Top" Width="142" Click="ButtonGoInRuSupport_Click"/>

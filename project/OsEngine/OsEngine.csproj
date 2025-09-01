@@ -124,6 +124,9 @@
     <PackageReference Include="System.ServiceModel.Federation" Version="8.1.2" />
     <PackageReference Include="WinForms.DataVisualization" Version="1.10.0" />
     <PackageReference Include="WTelegramClient" Version="4.3.4" />
+    <PackageReference Include="OxyPlot.Core" Version="2.1.2" />
+    <PackageReference Include="OxyPlot.Wpf" Version="2.1.2" />
+    <PackageReference Include="OxyPlot.SkiaSharp.Wpf" Version="2.1.2" />
   </ItemGroup>
   <ItemGroup Condition=" '$(Platform)' == 'AnyCPU' ">
     <Content Include="bin\$(Configuration)\libcrypto-3-x64.dll">

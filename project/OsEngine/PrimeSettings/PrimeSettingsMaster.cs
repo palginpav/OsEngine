@@ -137,6 +137,28 @@ namespace OsEngine.PrimeSettings
         }
         public static MemoryCleanerRegime _memoryCleanerRegime;
 
+        public static ChartType ChartType
+        {
+            get
+            {
+                if (_isLoad == false)
+                {
+                    Load();
+                }
+                return _chartType;
+            }
+            set
+            {
+                if(_chartType == value)
+                {
+                    return;
+                }
+                _chartType = value;
+                Save();
+            }
+        }
+        private static ChartType _chartType = ChartType.WinForms;
+
         public static void Save()
         {
             try
@@ -150,6 +172,7 @@ namespace OsEngine.PrimeSettings
                     writer.WriteLine(_rebootTradeUiLight);
                     writer.WriteLine(_reportCriticalErrors);
                     writer.WriteLine(_memoryCleanerRegime);
+                    writer.WriteLine(_chartType);
 
                     writer.Close();
                 }
@@ -189,6 +212,12 @@ namespace OsEngine.PrimeSettings
                     _reportCriticalErrors = Convert.ToBoolean(reader.ReadLine());
 
                     Enum.TryParse(reader.ReadLine(), out _memoryCleanerRegime);
+                    
+                    string chartTypeStr = reader.ReadLine();
+                    if (!string.IsNullOrEmpty(chartTypeStr))
+                    {
+                        Enum.TryParse(chartTypeStr, out _chartType);
+                    }
 
                     reader.Close();
                 }
@@ -206,5 +235,11 @@ namespace OsEngine.PrimeSettings
         Disable,
         At5Minutes,
         At30Minutes
+    }
+
+    public enum ChartType
+    {
+        WinForms,
+        OxyPlot
     }
 }

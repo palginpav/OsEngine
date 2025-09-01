@@ -72,6 +72,11 @@ namespace OsEngine.PrimeSettings
             CheckBoxRebootTradeUiLigth.IsChecked = PrimeSettingsMaster.RebootTradeUiLight;
             CheckBoxReportCriticalErrors.IsChecked = PrimeSettingsMaster.ReportCriticalErrors;
 
+            ComboBoxChartType.Items.Add(ChartType.WinForms.ToString());
+            ComboBoxChartType.Items.Add(ChartType.OxyPlot.ToString());
+            ComboBoxChartType.SelectedItem = PrimeSettingsMaster.ChartType.ToString();
+            ComboBoxChartType.SelectionChanged += ComboBoxChartType_SelectionChanged;
+
             CheckBoxExtraLogWindow.Click += CheckBoxExtraLogWindow_Click;
             CheckBoxExtraLogSound.Click += CheckBoxExtraLogSound_Click;
             CheckBoxTransactionSound.Click += CheckBoxTransactionSound_Click;
@@ -99,6 +104,7 @@ namespace OsEngine.PrimeSettings
             LabelHeader.Content = OsLocalization.PrimeSettings.LabelBotHeader;
             LabelRebootTradeUiLigth.Content = OsLocalization.PrimeSettings.LabelLightReboot;
             LabelReportCriticalErrors.Content = OsLocalization.PrimeSettings.ReportErrorsOnServer;
+            LabelChartType.Content = "Chart type";
 
             LabelSupportGroupRu.Content = OsLocalization.PrimeSettings.LabelSupportGroup + " RU:";
             LabelSupportGroupEng.Content = OsLocalization.PrimeSettings.LabelSupportGroup + " ENG:";
@@ -150,6 +156,16 @@ namespace OsEngine.PrimeSettings
         {
             if (CheckBoxReportCriticalErrors.IsChecked != null)
                 PrimeSettingsMaster.ReportCriticalErrors = CheckBoxReportCriticalErrors.IsChecked.Value;
+        }
+
+        private void ComboBoxChartType_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ChartType newChartType = new ChartType();
+
+            if (Enum.TryParse(ComboBoxChartType.SelectedItem.ToString(), out newChartType))
+            {
+                PrimeSettingsMaster.ChartType = newChartType;
+            }
         }
 
         private void ButtonGoInRuSupport_Click(object sender, RoutedEventArgs e)
