@@ -1378,8 +1378,11 @@ namespace OsEngine.OsTrader.Grids
 
                 Order order = lines[i].Position.OpenOrders[^1];
 
-                Tab.CloseOrder(order);
-                cancelledOrders++;
+                if(order.NumberMarket != null)
+                {
+                    Tab.CloseOrder(order);
+                    cancelledOrders++;
+                }
             }
 
             return cancelledOrders;
@@ -1436,7 +1439,8 @@ namespace OsEngine.OsTrader.Grids
 
                 Order order = lines[i].Position.CloseOrders[^1];
 
-                if(order.TypeOrder != OrderPriceType.Market)
+                if(order.NumberMarket != null 
+                   && order.TypeOrder != OrderPriceType.Market)
                 {
                     Tab.CloseOrder(order);
                     cancelledOrders++;
@@ -2013,6 +2017,24 @@ namespace OsEngine.OsTrader.Grids
                 {
                     TradeGridLine curLine = linesAll[i];
 
+                    Position position = curLine.Position;
+
+                    if(position != null 
+                        && position.OpenVolume > 0)
+                    {
+                        continue;
+                    }
+
+                    if(Tab.Security.PriceLimitHigh != 0 
+                        && Tab.Security.PriceLimitLow != 0)
+                    {
+                        if(curLine.PriceEnter > Tab.Security.PriceLimitHigh 
+                            || curLine.PriceEnter <  Tab.Security.PriceLimitLow)
+                        {
+                            continue;
+                        }
+                    }
+
                     if (curLine.PriceEnter <= lastPrice)
                     {
                         linesWithOrdersToOpenNeed.Add(curLine);
@@ -2029,6 +2051,24 @@ namespace OsEngine.OsTrader.Grids
                 for (int i = 0; i < linesAll.Count; i++)
                 {
                     TradeGridLine curLine = linesAll[i];
+
+                    Position position = curLine.Position;
+
+                    if (position != null
+                        && position.OpenVolume > 0)
+                    {
+                        continue;
+                    }
+
+                    if (Tab.Security.PriceLimitHigh != 0
+                        && Tab.Security.PriceLimitLow != 0)
+                    {
+                        if (curLine.PriceEnter > Tab.Security.PriceLimitHigh
+                            || curLine.PriceEnter < Tab.Security.PriceLimitLow)
+                        {
+                            continue;
+                        }
+                    }
 
                     if (curLine.PriceEnter >= lastPrice)
                     {
