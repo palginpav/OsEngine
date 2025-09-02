@@ -149,6 +149,8 @@ namespace CustomAnnotations
 
             public double TextRotation { get; set; }
 
+            // Add missing text color property
+            public OxyColor ActualTextColor { get; set; } = OxyColors.Black;
 
             protected ScreenPoint GetActualTextPosition(Func<ScreenPoint> defaultPosition)
             {

@@ -61,6 +61,18 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         private object candle_locker = new object();
 
+        // Store previous positions list to detect changes
+        // Сохраняем предыдущий список позиций для обнаружения изменений
+        private List<Position> _previousPositions = new List<Position>();
+        
+        // Store current positions for annotation updates
+        // Сохраняем текущие позиции для обновления аннотаций
+        private List<Position> _currentPositions = new List<Position>();
+        
+        // Store limit order line annotations for proper cleanup
+        // Сохраняем аннотации линий лимитных ордеров для правильной очистки
+        private List<LineAnnotation> _limitOrderLineAnnotations = new List<LineAnnotation>();
+        
 
         public CandleStickArea(OxyAreaSettings settings, List<OxyArea> all_areas, OxyChartPainter owner) : base(settings, owner)
         {
@@ -190,6 +202,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
                     annotation_date_time.TextPosition = new ScreenPoint(annotation_date_time.GetDataPointPosition(new DataPoint(last_X, last_Y)).X, plot_view.ActualHeight - plot_model.Padding.Bottom);
                     annotation_date_time.Text = DateTimeAxis.ToDateTime(last_X).ToString();
+                    
+                    // Update limit order annotations - following the exact same pattern as annotation_price
+                    // Обновляем аннотации лимитных ордеров - следуем точно тому же паттерну что и annotation_price
+                    UpdateLimitOrderAnnotations();
                 }
                 else
                 {
@@ -259,6 +275,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
                 annotation_date_time.TextPosition = new ScreenPoint(e.GetPosition(plot_view).X, plot_view.ActualHeight - plot_model.Padding.Bottom);
                 annotation_date_time.Text = DateTimeAxis.ToDateTime(dataPoint_event.X).ToString();
+                
+                // Update limit order annotations - following the exact same pattern as annotation_price
+                // Обновляем аннотации лимитных ордеров - следуем точно тому же паттерну что и annotation_price
+                UpdateLimitOrderAnnotations();
             };
 
             actions_to_calculate.Enqueue(action);
@@ -300,366 +320,574 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             Action positions_action = () =>
             {
-                if (scatter_series_list.Exists(x => (string)x.Tag == "open_long_deals_series"))
-                    scatter_series_list.Remove(scatter_series_list.Find(x => (string)x.Tag == "open_long_deals_series"));
-
-                var open_long_deals_series = new ScatterSeries()
+                // If positions list is empty, clear all position-related series and return
+                // Если список позиций пуст, очищаем все серии, связанные с позициями, и возвращаемся
+                if (deals.Count == 0)
                 {
-                    Tag = "open_long_deals_series",
-                    MarkerType = MarkerType.Custom,
-                    MarkerSize = 4,
-                    MarkerStrokeThickness = 0.5,
-                    MarkerStroke = OxyColors.AliceBlue,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    MarkerFill = OxyColor.FromArgb(255, 13, 255, 0),
-
-                    MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) },
-                };
-
-                if (scatter_series_list.Exists(x => (string)x.Tag == "open_short_deals_series"))
-                    scatter_series_list.Remove(scatter_series_list.Find(x => (string)x.Tag == "open_short_deals_series"));
-
-                var open_short_deals_series = new ScatterSeries()
-                {
-                    Tag = "open_short_deals_series",
-                    MarkerType = MarkerType.Custom,
-                    MarkerSize = 4,
-                    MarkerStrokeThickness = 0.5,
-                    MarkerStroke = OxyColors.AliceBlue,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    MarkerFill = OxyColor.FromArgb(255, 255, 17, 0),
-                    MarkerOutline = new[]
-                                    {
-                                    new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5),
-                                },
-                };
-
-                if (scatter_series_list.Exists(x => (string)x.Tag == "close_long_deals_series"))
-                    scatter_series_list.Remove(scatter_series_list.Find(x => (string)x.Tag == "close_long_deals_series"));
-
-
-                var close_long_deals_series = new ScatterSeries()
-                {
-                    Tag = "close_long_deals_series",
-                    MarkerType = MarkerType.Custom,
-                    MarkerSize = 4,
-                    MarkerStrokeThickness = 0.5,
-                    MarkerStroke = OxyColors.AliceBlue,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
-                    MarkerOutline = new[]
-                                    {
-                                    new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5),
-                                },
-                };
-
-                if (scatter_series_list.Exists(x => (string)x.Tag == "close_short_deals_series"))
-                    scatter_series_list.Remove(scatter_series_list.Find(x => (string)x.Tag == "close_short_deals_series"));
-
-
-                var close_short_deals_series = new ScatterSeries()
-                {
-                    Tag = "close_short_deals_series",
-                    MarkerType = MarkerType.Custom,
-                    MarkerSize = 4,
-                    MarkerStrokeThickness = 0.5,
-                    MarkerStroke = OxyColors.AliceBlue,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
-                    MarkerOutline = new[]
-                                    {
-                                    new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5),
-                                },
-                };
-
-
-                var long_deals = deals.Where(x => x.Direction == Side.Buy && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
-                var short_deals = deals.Where(x => x.Direction == Side.Sell && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
-
-                var items_open_long = long_deals
-                                 .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)
-                                 {
-                                 }).ToList();
-
-                var items_open_short = short_deals
-                                 .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)
-                                 {
-                                 }).ToList();
-
-                var items_close_long = long_deals
-                                 .Where(x => x.State == PositionStateType.Done)
-                                 .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)
-                                 {
-                                 }).ToList();
-
-                var items_close_short = short_deals
-                                 .Where(x => x.State == PositionStateType.Done)
-                                 .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)
-                                 {
-                                 }).ToList();
-
-
-
-                open_long_deals_series.Points.AddRange(items_open_long);
-                open_short_deals_series.Points.AddRange(items_open_short);
-                close_long_deals_series.Points.AddRange(items_close_long);
-                close_short_deals_series.Points.AddRange(items_close_short);
-
-                scatter_series_list.Add(open_long_deals_series);
-                scatter_series_list.Add(open_short_deals_series);
-                scatter_series_list.Add(close_long_deals_series);
-                scatter_series_list.Add(close_short_deals_series);
-
-                
-                
-
-                var profit_line_long = new LineSeries()
-                {
-                    LineStyle = LineStyle.LongDash,
-                    Color = OxyColor.FromArgb(255, 13, 255, 0),
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "profit_line_long"
-                };
-
-                
-                var loss_line_short = new LineSeries()
-                {
-                    LineStyle = LineStyle.LongDash,
-                    Color = OxyColor.FromArgb(255, 255, 17, 0),
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "loss_line_short"
-                };
-
-
-
-                var profit_deals = deals.Where(x => x.ProfitOperationAbs > 0 && x.State == PositionStateType.Done && x.EntryPrice != 0).ToArray();
-                var loss_deals = deals.Where(x => x.ProfitOperationAbs <= 0 && x.State == PositionStateType.Done && x.EntryPrice != 0).ToArray();
-
-
-                for (int i = 0; i < profit_deals.Length; i++)
-                {
-                    profit_line_long.Points.Add(new DataPoint(DateTimeAxis.ToDouble(profit_deals[i].TimeOpen), (double)profit_deals[i].EntryPrice));
-                    profit_line_long.Points.Add(new DataPoint(DateTimeAxis.ToDouble(profit_deals[i].TimeClose), (double)profit_deals[i].ClosePrice));
-
-                    if (i != profit_deals.Length - 1)
-                        profit_line_long.Points.Add(new DataPoint(double.NaN, (double)profit_deals[i].ClosePrice));
-                }
-
-                for (int i = 0; i < loss_deals.Length; i++)
-                {
-                    loss_line_short.Points.Add(new DataPoint(DateTimeAxis.ToDouble(loss_deals[i].TimeOpen), (double)loss_deals[i].EntryPrice));
-                    loss_line_short.Points.Add(new DataPoint(DateTimeAxis.ToDouble(loss_deals[i].TimeClose), (double)loss_deals[i].ClosePrice));
-
-                    if (i != loss_deals.Length - 1)
-                        loss_line_short.Points.Add(new DataPoint(double.NaN, (double)loss_deals[i].ClosePrice));
-                }
-
-                if (lines_series_list.Exists(x => (string)x.Tag == "profit_line_long"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "profit_line_long"));
-
-                if (lines_series_list.Exists(x => (string)x.Tag == "loss_line_short"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "loss_line_short"));
-
-                if (profit_line_long.Points.Count > 0)
-                    lines_series_list.Add(profit_line_long);
-
-                if (loss_line_short.Points.Count > 0)
-                    lines_series_list.Add(loss_line_short);
-
-                // Process limit orders for positions with "Opening" status
-                // Обработка лимитных ордеров для позиций со статусом "Открытие"
-                // Remove existing limit order series if they exist
-                // Удаляем существующие серии лимитных ордеров, если они существуют
-                if (lines_series_list.Exists(x => (string)x.Tag == "limit_buy_orders_series"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "limit_buy_orders_series"));
-
-                if (lines_series_list.Exists(x => (string)x.Tag == "limit_sell_orders_series"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "limit_sell_orders_series"));
-
-                if (lines_series_list.Exists(x => (string)x.Tag == "stop_buy_orders_series"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "stop_buy_orders_series"));
-
-                if (lines_series_list.Exists(x => (string)x.Tag == "stop_sell_orders_series"))
-                    lines_series_list.Remove(lines_series_list.Find(x => (string)x.Tag == "stop_sell_orders_series"));
-
-                // Create series for limit buy orders
-                // Создаем серию для лимитных ордеров на покупку
-                var limit_buy_orders_series = new LineSeries()
-                {
-                    LineStyle = LineStyle.Solid,
-                    Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "limit_buy_orders_series"
-                };
-
-                // Create series for limit sell orders
-                // Создаем серию для лимитных ордеров на продажу
-                var limit_sell_orders_series = new LineSeries()
-                {
-                    LineStyle = LineStyle.Solid,
-                    Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "limit_sell_orders_series"
-                };
-
-                // Create series for stop buy orders
-                // Создаем серию для стоп-ордеров на покупку
-                var stop_buy_orders_series = new LineSeries()
-                {
-                    LineStyle = LineStyle.Dash,
-                    Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "stop_buy_orders_series"
-                };
-
-                // Create series for stop sell orders
-                // Создаем серию для стоп-ордеров на продажу
-                var stop_sell_orders_series = new LineSeries()
-                {
-                    LineStyle = LineStyle.Dash,
-                    Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
-                    Selectable = false,
-                    EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                    StrokeThickness = 1,
-                    Tag = "stop_sell_orders_series"
-                };
-
-                // Filter positions with status "Opening" or "Closing" for limit orders
-                // Фильтруем позиции со статусом "Открытие" или "Закрытие" для лимитных ордеров
-                var positions_with_limit_orders = deals.Where(x => x.State == PositionStateType.Opening || x.State == PositionStateType.Closing).ToArray();
-
-                foreach (var position in positions_with_limit_orders)
-                {
-                    // Check OpenOrders for opening positions
-                    // Проверяем OpenOrders для открывающихся позиций
-                    if (position.OpenOrders != null && position.OpenOrders.Count > 0)
+                    // Clear all position series and reset previous positions
+                    // Очищаем все серии позиций и сбрасываем предыдущие позиции
+                    ClearAllPositionSeries();
+                    _previousPositions.Clear();
+                    _currentPositions.Clear();
+                    
+                    // Ensure chart is refreshed to remove any lingering markers
+                    // Убеждаемся, что график обновлен для удаления любых задержавшихся маркеров
+                    if (plot_view != null && plot_view.Dispatcher != null)
                     {
-                        foreach (var order in position.OpenOrders)
+                        plot_view.Dispatcher.Invoke(() =>
                         {
-                            if (order.State == OrderStateType.Active || order.State == OrderStateType.Pending)
+                            try
                             {
-                                // Check if it's a limit order
-                                // Проверяем, является ли это лимитным ордером
-                                if (order.TypeOrder == OrderPriceType.Limit)
-                                {
-                                    if (order.Side == Side.Buy)
-                                    {
-                                        // Add horizontal line for limit buy order
-                                        // Добавляем горизонтальную линию для лимитного ордера на покупку
-                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
-                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
-                                    }
-                                    else if (order.Side == Side.Sell)
-                                    {
-                                        // Add horizontal line for limit sell order
-                                        // Добавляем горизонтальную линию для лимитного ордера на продажу
-                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
-                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
-                                    }
-                                }
+                                plot_view.InvalidatePlot(true);
                             }
-                        }
+                            catch { /* Ignore errors during chart refresh */ }
+                        });
                     }
-
-                    // Check CloseOrders for closing positions
-                    // Проверяем CloseOrders для закрывающихся позиций
-                    if (position.CloseOrders != null && position.CloseOrders.Count > 0)
-                    {
-                        foreach (var order in position.CloseOrders)
-                        {
-                            if (order.State == OrderStateType.Active || order.State == OrderStateType.Pending)
-                            {
-                                // Check if it's a limit order
-                                // Проверяем, является ли это лимитным ордером
-                                if (order.TypeOrder == OrderPriceType.Limit)
-                                {
-                                    if (order.Side == Side.Buy)
-                                    {
-                                        // Add horizontal line for limit buy order (closing)
-                                        // Добавляем горизонтальную линию для лимитного ордера на покупку (закрытие)
-                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
-                                        limit_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
-                                    }
-                                    else if (order.Side == Side.Sell)
-                                    {
-                                        // Add horizontal line for limit sell order (closing)
-                                        // Добавляем горизонтальную линию для лимитного ордера на продажу (закрытие)
-                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(order.TimeCreate), (double)order.Price));
-                                        limit_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price));
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Check for stop orders
-                    // Проверяем стоп-ордера
-                    if (position.StopOrderIsActive && position.StopOrderRedLine != 0)
-                    {
-                        if (position.Direction == Side.Buy)
-                        {
-                            // Add horizontal line for stop buy order
-                            // Добавляем горизонтальную линию для стоп-ордера на покупку
-                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.StopOrderRedLine));
-                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.StopOrderRedLine));
-                        }
-                        else if (position.Direction == Side.Sell)
-                        {
-                            // Add horizontal line for stop sell order
-                            // Добавляем горизонтальную линию для стоп-ордера на продажу
-                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.StopOrderRedLine));
-                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.StopOrderRedLine));
-                        }
-                    }
-
-                    // Check for profit orders
-                    // Проверяем ордера на прибыль
-                    if (position.ProfitOrderIsActive && position.ProfitOrderRedLine != 0)
-                    {
-                        if (position.Direction == Side.Buy)
-                        {
-                            // Add horizontal line for profit sell order
-                            // Добавляем горизонтальную линию для ордера на прибыль при продаже
-                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.ProfitOrderRedLine));
-                            stop_sell_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.ProfitOrderRedLine));
-                        }
-                        else if (position.Direction == Side.Sell)
-                        {
-                            // Add horizontal line for profit buy order
-                            // Добавляем горизонтальную линию для ордера на прибыль при покупке
-                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(position.TimeCreate), (double)position.ProfitOrderRedLine));
-                            stop_buy_orders_series.Points.Add(new DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)position.ProfitOrderRedLine));
-                        }
-                    }
+                    return;
                 }
 
-                // Add series to the chart if they have points
-                // Добавляем серии на график, если они содержат точки
-                if (limit_buy_orders_series.Points.Count > 0)
-                    lines_series_list.Add(limit_buy_orders_series);
+                // Check if we need to rebuild all series (first time or major changes)
+                // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
+                bool needRebuild = _previousPositions.Count == 0 || 
+                                 Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
+                                 HasSignificantPositionChanges(deals);
 
-                if (limit_sell_orders_series.Points.Count > 0)
-                    lines_series_list.Add(limit_sell_orders_series);
+                if (needRebuild)
+                {
+                    // Rebuild all series from scratch
+                    // Перестраиваем все серии с нуля
+                    RebuildAllPositionSeries(deals);
+                }
+                else
+                {
+                    // Update only changed positions
+                    // Обновляем только измененные позиции
+                    UpdateChangedPositions(deals);
+                }
 
-                if (stop_buy_orders_series.Points.Count > 0)
-                    lines_series_list.Add(stop_buy_orders_series);
+                // Store current positions for next comparison
+                // Сохраняем текущие позиции для следующего сравнения
+                _previousPositions = deals.Select(p => ClonePosition(p)).ToList();
+                
+                // Store current positions for annotation updates
+                // Сохраняем текущие позиции для обновления аннотаций
+                _currentPositions = deals;
 
-                if (stop_sell_orders_series.Points.Count > 0)
-                    lines_series_list.Add(stop_sell_orders_series);
+                // Force chart redraw to ensure all changes are visible (same approach as indicators)
+                // Принудительно обновляем график для обеспечения видимости всех изменений (тот же подход, что и для индикаторов)
+                Redraw();
             };
 
-
             actions_to_calculate.Enqueue(positions_action);
+        }
+
+        /// <summary>
+        /// Check if there are significant changes in positions that require full rebuild
+        /// Проверяем, есть ли серьезные изменения в позициях, требующие полной перестройки
+        /// </summary>
+        private bool HasSignificantPositionChanges(List<Position> currentDeals)
+        {
+            if (_previousPositions.Count != currentDeals.Count)
+                return true;
+
+            // Check if any existing positions have significant changes
+            // Проверяем, есть ли у существующих позиций серьезные изменения
+            foreach (var currentPos in currentDeals)
+            {
+                var previousPos = _previousPositions.FirstOrDefault(p => p.Number == currentPos.Number);
+                if (previousPos == null)
+                    return true; // New position added
+
+                // Check for significant changes
+                // Проверяем серьезные изменения
+                if (previousPos.State != currentPos.State ||
+                    previousPos.Direction != currentPos.Direction ||
+                    previousPos.ProfitOperationAbs != currentPos.ProfitOperationAbs ||
+                    previousPos.StopOrderIsActive != currentPos.StopOrderIsActive ||
+                    previousPos.StopOrderRedLine != currentPos.StopOrderRedLine ||
+                    previousPos.ProfitOrderIsActive != currentPos.ProfitOrderIsActive ||
+                    previousPos.ProfitOrderRedLine != currentPos.ProfitOrderRedLine)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Clone position for comparison purposes
+        /// Клонируем позицию для целей сравнения
+        /// </summary>
+        private Position ClonePosition(Position original)
+        {
+            return new Position
+            {
+                Number = original.Number,
+                State = original.State,
+                Direction = original.Direction,
+                ProfitOperationAbs = original.ProfitOperationAbs,
+                StopOrderIsActive = original.StopOrderIsActive,
+                StopOrderRedLine = original.StopOrderRedLine,
+                ProfitOrderIsActive = original.ProfitOrderIsActive,
+                ProfitOrderRedLine = original.ProfitOrderRedLine
+            };
+        }
+
+        /// <summary>
+        /// Rebuild all position series from scratch
+        /// Перестраиваем все серии позиций с нуля
+        /// </summary>
+        private void RebuildAllPositionSeries(List<Position> deals)
+        {
+            // Clear existing series first
+            // Сначала очищаем существующие серии
+            ClearAllPositionSeries();
+
+            // Create new scatter series for position markers
+            // Создаем новые точечные серии для маркеров позиций
+            var open_long_deals_series = new ScatterSeries()
+            {
+                Tag = "open_long_deals_series",
+                MarkerType = MarkerType.Custom,
+                MarkerSize = 4,
+                MarkerStrokeThickness = 0.5,
+                MarkerStroke = OxyColors.AliceBlue,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                MarkerFill = OxyColor.FromArgb(255, 13, 255, 0),
+                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) },
+            };
+
+            var open_short_deals_series = new ScatterSeries()
+            {
+                Tag = "open_short_deals_series",
+                MarkerType = MarkerType.Custom,
+                MarkerSize = 4,
+                MarkerStrokeThickness = 0.5,
+                MarkerStroke = OxyColors.AliceBlue,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                MarkerFill = OxyColor.FromArgb(255, 255, 17, 0),
+                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) },
+            };
+
+            var close_long_deals_series = new ScatterSeries()
+            {
+                Tag = "close_long_deals_series",
+                MarkerType = MarkerType.Custom,
+                MarkerSize = 4,
+                MarkerStrokeThickness = 0.5,
+                MarkerStroke = OxyColors.AliceBlue,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
+                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) },
+            };
+
+            var close_short_deals_series = new ScatterSeries()
+            {
+                Tag = "close_short_deals_series",
+                MarkerType = MarkerType.Custom,
+                MarkerSize = 4,
+                MarkerStrokeThickness = 0.5,
+                MarkerStroke = OxyColors.AliceBlue,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
+                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) },
+            };
+
+            // Filter positions and create data points
+            // Фильтруем позиции и создаем точки данных
+            var long_deals = deals.Where(x => x.Direction == Side.Buy && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
+            var short_deals = deals.Where(x => x.Direction == Side.Sell && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
+
+            var items_open_long = long_deals
+                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)).ToList();
+
+            var items_open_short = short_deals
+                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)).ToList();
+
+            var items_close_long = long_deals
+                             .Where(x => x.State == PositionStateType.Done)
+                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)).ToList();
+
+            var items_close_short = short_deals
+                             .Where(x => x.State == PositionStateType.Done)
+                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)).ToList();
+
+            // Add points to series
+            // Добавляем точки в серии
+            open_long_deals_series.Points.AddRange(items_open_long);
+            open_short_deals_series.Points.AddRange(items_open_short);
+            close_long_deals_series.Points.AddRange(items_close_long);
+            close_short_deals_series.Points.AddRange(items_close_short);
+
+            // Only add series that have points (same logic as limit orders)
+            // Добавляем только те серии, которые содержат точки (та же логика, что и для лимитных ордеров)
+            if (open_long_deals_series.Points.Count > 0)
+                scatter_series_list.Add(open_long_deals_series);
+
+            if (open_short_deals_series.Points.Count > 0)
+                scatter_series_list.Add(open_short_deals_series);
+
+            if (close_long_deals_series.Points.Count > 0)
+                scatter_series_list.Add(close_long_deals_series);
+
+            if (close_short_deals_series.Points.Count > 0)
+                scatter_series_list.Add(close_short_deals_series);
+
+            // Process profit/loss lines and order lines
+            // Обрабатываем линии прибыли/убытка и ордеров
+            ProcessProfitLossLines(deals);
+            ProcessOrderLines(deals);
+        }
+
+        /// <summary>
+        /// Update only changed positions without full rebuild
+        /// Обновляем только измененные позиции без полной перестройки
+        /// </summary>
+        private void UpdateChangedPositions(List<Position> currentDeals)
+        {
+            // Find deleted positions
+            // Находим удаленные позиции
+            var deletedPositions = _previousPositions.Where(p => 
+                !currentDeals.Any(cp => cp.Number == p.Number)).ToList();
+
+            // Find new positions
+            // Находим новые позиции
+            var newPositions = currentDeals.Where(cp => 
+                !_previousPositions.Any(pp => pp.Number == cp.Number)).ToList();
+
+            // Find modified positions
+            // Находим измененные позиции
+            var modifiedPositions = currentDeals.Where(cp => 
+                _previousPositions.Any(pp => pp.Number == cp.Number && 
+                    (pp.State != cp.State || 
+                     pp.Direction != cp.Direction ||
+                     pp.ProfitOperationAbs != cp.ProfitOperationAbs ||
+                     pp.StopOrderIsActive != cp.StopOrderIsActive ||
+                     pp.StopOrderRedLine != cp.StopOrderRedLine ||
+                     pp.ProfitOrderIsActive != cp.ProfitOrderIsActive ||
+                     pp.ProfitOrderRedLine != cp.ProfitOrderRedLine))).ToList();
+
+            // If there are any changes, rebuild everything (same approach as limit orders)
+            // Если есть любые изменения, перестраиваем все (тот же подход, что и для лимитных ордеров)
+            if (deletedPositions.Count > 0 || newPositions.Count > 0 || modifiedPositions.Count > 0)
+            {
+                RebuildAllPositionSeries(currentDeals);
+            }
+        }
+
+        /// <summary>
+        /// Process profit and loss lines for positions
+        /// Обрабатываем линии прибыли и убытка для позиций
+        /// </summary>
+        private void ProcessProfitLossLines(List<Position> deals)
+        {
+            var profit_line_long = new LineSeries()
+            {
+                LineStyle = LineStyle.LongDash,
+                Color = OxyColor.FromArgb(255, 13, 255, 0),
+                Selectable = false,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                StrokeThickness = 1,
+                Tag = "profit_line_long"
+            };
+
+            var loss_line_short = new LineSeries()
+            {
+                LineStyle = LineStyle.LongDash,
+                Color = OxyColor.FromArgb(255, 255, 17, 0),
+                Selectable = false,
+                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
+                StrokeThickness = 1,
+                Tag = "loss_line_short"
+            };
+
+            var profit_deals = deals.Where(x => x.ProfitOperationAbs > 0 && x.State == PositionStateType.Done && x.EntryPrice != 0).ToArray();
+            var loss_deals = deals.Where(x => x.ProfitOperationAbs <= 0 && x.State == PositionStateType.Done && x.EntryPrice != 0).ToArray();
+
+            // Add profit lines
+            // Добавляем линии прибыли
+            for (int i = 0; i < profit_deals.Length; i++)
+            {
+                profit_line_long.Points.Add(new DataPoint(DateTimeAxis.ToDouble(profit_deals[i].TimeOpen), (double)profit_deals[i].EntryPrice));
+                profit_line_long.Points.Add(new DataPoint(DateTimeAxis.ToDouble(profit_deals[i].TimeClose), (double)profit_deals[i].ClosePrice));
+
+                if (i != profit_deals.Length - 1)
+                    profit_line_long.Points.Add(new DataPoint(double.NaN, (double)profit_deals[i].ClosePrice));
+            }
+
+            // Add loss lines
+            // Добавляем линии убытка
+            for (int i = 0; i < loss_deals.Length; i++)
+            {
+                loss_line_short.Points.Add(new DataPoint(DateTimeAxis.ToDouble(loss_deals[i].TimeOpen), (double)loss_deals[i].EntryPrice));
+                loss_line_short.Points.Add(new DataPoint(DateTimeAxis.ToDouble(loss_deals[i].TimeClose), (double)loss_deals[i].ClosePrice));
+
+                if (i != loss_deals.Length - 1)
+                    loss_line_short.Points.Add(new DataPoint(double.NaN, (double)loss_deals[i].ClosePrice));
+            }
+
+            // Add series to chart if they contain points
+            // Добавляем серии на график, если они содержат точки
+            if (profit_line_long.Points.Count > 0)
+                lines_series_list.Add(profit_line_long);
+
+            if (loss_line_short.Points.Count > 0)
+                lines_series_list.Add(loss_line_short);
+        }
+
+        /// <summary>
+        /// Process order lines (limit and stop orders) for positions
+        /// Обрабатываем линии ордеров (лимитные и стоп-ордера) для позиций
+        /// </summary>
+        private void ProcessOrderLines(List<Position> deals)
+        {
+            // Clear previous limit order line annotations
+            // Очищаем предыдущие аннотации линий лимитных ордеров
+            ClearLimitOrderLineAnnotations();
+            
+            // Create line annotations for different order types
+            // Создаем аннотации линий для различных типов ордеров
+            var limitBuyAnnotations = new List<LineAnnotation>();
+            var limitSellAnnotations = new List<LineAnnotation>();
+            var stopBuyAnnotations = new List<LineAnnotation>();
+            var stopSellAnnotations = new List<LineAnnotation>();
+
+            // Filter positions with status "Opening" or "Closing" for orders
+            // Фильтруем позиции со статусом "Открытие" или "Закрытие" для ордеров
+            var positions_with_orders = deals.Where(x => x.State == PositionStateType.Opening || x.State == PositionStateType.Closing).ToArray();
+
+            foreach (var position in positions_with_orders)
+            {
+                // Process open orders
+                // Обрабатываем открывающие ордера
+                ProcessOrdersForPosition(position, position.OpenOrders, limitBuyAnnotations, limitSellAnnotations, stopBuyAnnotations, stopSellAnnotations);
+
+                // Process close orders
+                // Обрабатываем закрывающие ордера
+                ProcessOrdersForPosition(position, position.CloseOrders, limitBuyAnnotations, limitSellAnnotations, stopBuyAnnotations, stopSellAnnotations);
+
+                // Process stop and profit orders
+                // Обрабатываем стоп и профит ордера
+                ProcessStopAndProfitOrders(position, stopBuyAnnotations, stopSellAnnotations);
+            }
+
+            // Add all line annotations to the plot model
+            // Добавляем все аннотации линий в модель графика
+            foreach (var annotation in limitBuyAnnotations)
+            {
+                plot_model.Annotations.Add(annotation);
+                _limitOrderLineAnnotations.Add(annotation);
+            }
+            
+            foreach (var annotation in limitSellAnnotations)
+            {
+                plot_model.Annotations.Add(annotation);
+                _limitOrderLineAnnotations.Add(annotation);
+            }
+            
+            foreach (var annotation in stopBuyAnnotations)
+            {
+                plot_model.Annotations.Add(annotation);
+                _limitOrderLineAnnotations.Add(annotation);
+            }
+            
+            foreach (var annotation in stopSellAnnotations)
+            {
+                plot_model.Annotations.Add(annotation);
+                _limitOrderLineAnnotations.Add(annotation);
+            }
+                
+        }
+
+        /// <summary>
+        /// Process orders for a specific position
+        /// Обрабатываем ордера для конкретной позиции
+        /// </summary>
+        private void ProcessOrdersForPosition(Position position, List<Order> orders, List<LineAnnotation> limitBuyAnnotations, List<LineAnnotation> limitSellAnnotations, List<LineAnnotation> stopBuyAnnotations, List<LineAnnotation> stopSellAnnotations)
+        {
+            if (orders == null || orders.Count == 0)
+                return;
+
+            var limitBuyOrders = orders.Where(o => o.TypeOrder == OrderPriceType.Limit && o.Side == Side.Buy && (o.State == OrderStateType.Active || o.State == OrderStateType.Pending)).ToList();
+            var limitSellOrders = orders.Where(o => o.TypeOrder == OrderPriceType.Limit && o.Side == Side.Sell && (o.State == OrderStateType.Active || o.State == OrderStateType.Pending)).ToList();
+
+            // Process limit buy orders - create horizontal line annotations
+            // Обрабатываем лимитные ордера на покупку - создаем аннотации горизонтальных линий
+            foreach (var order in limitBuyOrders)
+            {
+                var lineAnnotation = new LineAnnotation()
+                {
+                    Type = LineAnnotationType.Horizontal,
+                    Y = (double)order.Price,
+                    Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
+                    StrokeThickness = 0.5,
+                    LineStyle = LineStyle.Solid,
+                    Selectable = false,
+                    Layer = AnnotationLayer.BelowSeries,
+                    EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                    Tag = "limit_buy_order_line"
+                };
+                
+                limitBuyAnnotations.Add(lineAnnotation);
+            }
+
+            // Process limit sell orders - create horizontal line annotations
+            // Обрабатываем лимитные ордера на продажу - создаем аннотации горизонтальных линий
+            foreach (var order in limitSellOrders)
+            {
+                var lineAnnotation = new LineAnnotation()
+                {
+                    Type = LineAnnotationType.Horizontal,
+                    Y = (double)order.Price,
+                    Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
+                    StrokeThickness = 0.5,
+                    LineStyle = LineStyle.Solid,
+                    Selectable = false,
+                    Layer = AnnotationLayer.BelowSeries,
+                    EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                    Tag = "limit_sell_order_line"
+                };
+                
+                limitSellAnnotations.Add(lineAnnotation);
+            }
+        }
+
+        /// <summary>
+        /// Process stop and profit orders for a position
+        /// Обрабатываем стоп и профит ордера для позиции
+        /// </summary>
+        private void ProcessStopAndProfitOrders(Position position, List<LineAnnotation> stopBuyAnnotations, List<LineAnnotation> stopSellAnnotations)
+        {
+            // Check for stop orders
+            // Проверяем стоп-ордера
+            if (position.StopOrderIsActive && position.StopOrderRedLine != 0)
+            {
+                if (position.Direction == Side.Buy)
+                {
+                    // Create horizontal line annotation for stop buy order
+                    // Создаем аннотацию горизонтальной линии для стоп-ордера на покупку
+                    var lineAnnotation = new LineAnnotation()
+                    {
+                        Type = LineAnnotationType.Horizontal,
+                        Y = (double)position.StopOrderRedLine,
+                        Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
+                        StrokeThickness = 0.5,
+                        LineStyle = LineStyle.Dash,
+                        Selectable = false,
+                        Layer = AnnotationLayer.BelowSeries,
+                        EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                        Tag = "stop_buy_order_line"
+                    };
+                    
+                    stopBuyAnnotations.Add(lineAnnotation);
+                }
+                else if (position.Direction == Side.Sell)
+                {
+                    // Create horizontal line annotation for stop sell order
+                    // Создаем аннотацию горизонтальной линии для стоп-ордера на продажу
+                    var lineAnnotation = new LineAnnotation()
+                    {
+                        Type = LineAnnotationType.Horizontal,
+                        Y = (double)position.StopOrderRedLine,
+                        Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
+                        StrokeThickness = 0.5,
+                        LineStyle = LineStyle.Dash,
+                        Selectable = false,
+                        Layer = AnnotationLayer.BelowSeries,
+                        EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                        Tag = "stop_sell_order_line"
+                    };
+                    
+                    stopSellAnnotations.Add(lineAnnotation);
+                }
+            }
+
+            // Check for profit orders
+            // Проверяем ордера на прибыль
+            if (position.ProfitOrderIsActive && position.ProfitOrderRedLine != 0)
+            {
+                if (position.Direction == Side.Buy)
+                {
+                    // Create horizontal line annotation for profit sell order
+                    // Создаем аннотацию горизонтальной линии для ордера на прибыль при продаже
+                    var lineAnnotation = new LineAnnotation()
+                    {
+                        Type = LineAnnotationType.Horizontal,
+                        Y = (double)position.ProfitOrderRedLine,
+                        Color = OxyColor.FromArgb(255, 255, 17, 0), // Red for sell / Красный для продажи
+                        StrokeThickness = 0.5,
+                        LineStyle = LineStyle.Dash,
+                        Selectable = false,
+                        Layer = AnnotationLayer.BelowSeries,
+                        EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                        Tag = "profit_sell_order_line"
+                    };
+                    
+                    stopSellAnnotations.Add(lineAnnotation);
+                }
+                else if (position.Direction == Side.Sell)
+                {
+                    // Create horizontal line annotation for profit buy order
+                    // Создаем аннотацию горизонтальной линии для ордера на прибыль при покупке
+                    var lineAnnotation = new LineAnnotation()
+                    {
+                        Type = LineAnnotationType.Horizontal,
+                        Y = (double)position.ProfitOrderRedLine,
+                        Color = OxyColor.FromArgb(255, 13, 255, 0), // Green for buy / Зеленый для покупки
+                        StrokeThickness = 0.5,
+                        LineStyle = LineStyle.Dash,
+                        Selectable = false,
+                        Layer = AnnotationLayer.BelowSeries,
+                        EdgeRenderingMode = EdgeRenderingMode.Automatic,
+                        Tag = "profit_buy_order_line"
+                    };
+                    
+                    stopBuyAnnotations.Add(lineAnnotation);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clear all position-related series from the chart
+        /// Очищаем все серии, связанные с позициями, с графика
+        /// </summary>
+        private void ClearAllPositionSeries()
+        {
+            // Remove all position-related scatter series
+            // Удаляем все точечные серии, связанные с позициями
+            scatter_series_list.RemoveAll(x => 
+                (string)x.Tag == "open_long_deals_series" ||
+                (string)x.Tag == "open_short_deals_series" ||
+                (string)x.Tag == "close_long_deals_series" ||
+                (string)x.Tag == "close_short_deals_series");
+
+            // Remove all position-related line series
+            // Удаляем все линейные серии, связанные с позициями
+            lines_series_list.RemoveAll(x => 
+                (string)x.Tag == "profit_line_long" ||
+                (string)x.Tag == "loss_line_short");
+        }
+        
+        /// <summary>
+        /// Clear all limit order line annotations from the chart
+        /// Очищаем все аннотации линий лимитных ордеров с графика
+        /// </summary>
+        private void ClearLimitOrderLineAnnotations()
+        {
+            // Remove all limit order line annotations from the plot model
+            // Удаляем все аннотации линий лимитных ордеров из модели графика
+            foreach (var annotation in _limitOrderLineAnnotations)
+            {
+                if (plot_model.Annotations.Contains(annotation))
+                {
+                    plot_model.Annotations.Remove(annotation);
+                }
+            }
+            
+            // Clear the list
+            // Очищаем список
+            _limitOrderLineAnnotations.Clear();
         }
 
         public void BuildCandleSeries()
@@ -902,6 +1130,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
                         annotation_date_time.TextPosition = new ScreenPoint(annotation_price.GetDataPointPosition(new DataPoint(last_X, last_Y)).X, plot_view.ActualHeight - plot_model.Padding.Bottom);
                         annotation_date_time.Text = DateTimeAxis.ToDateTime(last_X).ToString();
+                        
+                        // Update limit order annotations - following the exact same pattern as annotation_price
+                        // Обновляем аннотации лимитных ордеров - следуем точно тому же паттерну что и annotation_price
+                        UpdateLimitOrderAnnotations();
                     }
                     else
                     {
@@ -933,6 +1165,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
                                 annotation_date_time.TextPosition = new ScreenPoint(mouse_event_args.GetPosition(plot_view).X, plot_view.ActualHeight - plot_model.Padding.Bottom);
                                 annotation_date_time.Text = DateTimeAxis.ToDateTime(dataPoint_event.X).ToString();
+                                
                             }
                         }
                     }
@@ -940,6 +1173,75 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             };
 
             plot_view.Dispatcher.Invoke(redraw_action);
+        }
+
+        /// <summary>
+        /// Update limit order annotations - following the exact same pattern as annotation_price
+        /// Обновляем аннотации лимитных ордеров - следуем точно тому же паттерну что и annotation_price
+        /// </summary>
+        private void UpdateLimitOrderAnnotations()
+        {
+            if (plot_model == null || plot_view == null)
+                return;
+
+            try
+            {
+                // Get all active limit orders from positions
+                // Получаем все активные лимитные ордера из позиций
+                var activeLimitOrders = new List<Order>();
+                
+                if (_currentPositions != null)
+                {
+                    foreach (var position in _currentPositions)
+                    {
+                        if (position.OpenOrders != null)
+                        {
+                            var limitOrders = position.OpenOrders.Where(o => 
+                                o.State == OrderStateType.Active || o.State == OrderStateType.Pending)
+                                .Where(o => o.TypeOrder == OrderPriceType.Limit);
+                            activeLimitOrders.AddRange(limitOrders);
+                        }
+                        
+                        if (position.CloseOrders != null)
+                        {
+                            var limitOrders = position.CloseOrders.Where(o => 
+                                o.State == OrderStateType.Active || o.State == OrderStateType.Pending)
+                                .Where(o => o.TypeOrder == OrderPriceType.Limit);
+                            activeLimitOrders.AddRange(limitOrders);
+                        }
+                    }
+                }
+
+                // Update annotations - following the exact same pattern as annotation_price
+                // Обновляем аннотации - следуем точно тому же паттерну что и annotation_price
+                for (int i = 0; i < annotation_limit_list.Count; i++)
+                {
+                    if (i < activeLimitOrders.Count)
+                    {
+                        // Show annotation for this limit order
+                        // Показываем аннотацию для этого лимитного ордера
+                        var order = activeLimitOrders[i];
+                        var annotation = annotation_limit_list[i];
+                        
+                        // Update exactly like annotation_price does
+                        // Обновляем точно так же как это делает annotation_price
+                        annotation.TextPosition = new ScreenPoint(plot_view.ActualWidth - plot_model.Padding.Right, 
+                            annotation.GetDataPointPosition(new OxyPlot.DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price)).Y);
+                        annotation.Text = order.Price.ToString("F" + digits.ToString());
+                    }
+                    else
+                    {
+                        // Hide this annotation by setting empty text
+                        // Скрываем эту аннотацию, устанавливая пустой текст
+                        annotation_limit_list[i].Text = "";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle any errors silently - following the same pattern as annotation_price
+                // Обрабатываем ошибки тихо - следуем тому же паттерну что и annotation_price
+            }
         }
 
         private int GetDecimalsCount(decimal d)

@@ -43,6 +43,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         public CustomTextAnnotation annotation_price;
         public CustomTextAnnotation annotation_date_time;
+        
+        // List of limit order annotations - following the same pattern as annotation_price
+        // Список аннотаций лимитных ордеров - следуем тому же паттерну что и annotation_price
+        public List<CustomTextAnnotation> annotation_limit_list = new List<CustomTextAnnotation>();
      
         public ScreenPoint mouse_screen_point = new ScreenPoint();
         public System.Windows.Input.MouseEventArgs mouse_event_args;
@@ -112,7 +116,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 Tag = "annotation_price"
             };
 
-
             annotation_date_time = new CustomTextAnnotation()
             {
                 Layer = AnnotationLayer.AboveSeries,
@@ -127,6 +130,30 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 EdgeRenderingMode = EdgeRenderingMode.PreferSpeed,
                 Tag = "annotation_date_time"
             };
+
+            // Initialize limit order annotations - following the same pattern as annotation_price
+            // Инициализируем аннотации лимитных ордеров - следуем тому же паттерну что и annotation_price
+            for (int i = 0; i < 10; i++) // Create 10 annotations for potential limit orders
+            {
+                var limitAnnotation = new CustomTextAnnotation()
+                {
+                    Layer = AnnotationLayer.AboveSeries,
+                    ClipByXAxis = false,
+                    ClipByYAxis = false,
+                    Background = OxyColor.Parse("#FF5500"),
+                    TextColor = OxyColors.AliceBlue,
+                    Stroke = OxyColor.Parse("#FF5500"),
+                    TextHorizontalAlignment = HorizontalAlignment.Right,
+                    TextVerticalAlignment = VerticalAlignment.Middle,
+                    Padding = new OxyThickness(2),
+                    EdgeRenderingMode = EdgeRenderingMode.PreferSpeed,
+                    Tag = $"annotation_limit_{i}",
+                    Text = "", // Start with empty text
+                    TextPosition = new ScreenPoint(0, 0) // Will be updated dynamically
+                };
+                
+                annotation_limit_list.Add(limitAnnotation);
+            }
 
 
             date_time_axis_X = new DateTimeAxis()
@@ -202,6 +229,13 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             plot_model.Annotations.Add(annotation_price);
             plot_model.Annotations.Add(annotation_date_time);
+
+            // Add all limit order annotations to the plot model - following the same pattern as annotation_price
+            // Добавляем все аннотации лимитных ордеров в модель графика - следуем тому же паттерну что и annotation_price
+            foreach (var limitAnnotation in annotation_limit_list)
+            {
+                plot_model.Annotations.Add(limitAnnotation);
+            }
 
 
             plot_model.Axes.Add(date_time_axis_X);

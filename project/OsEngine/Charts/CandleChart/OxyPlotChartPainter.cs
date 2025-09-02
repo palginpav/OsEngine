@@ -1542,7 +1542,7 @@ namespace OsEngine.Charts.CandleChart
 
         public void ProcessTrades(List<Trade> trades)
         {
-            //обработка нужна для отображение аска бида. устарело
+            //обработка нужна для отображения аска бида. Устарело
         }
 
         public void ProcessStopLimits(List<PositionOpenerToStopLimit> stopLimits)
