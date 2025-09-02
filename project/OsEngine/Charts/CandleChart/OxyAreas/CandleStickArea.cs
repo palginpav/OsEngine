@@ -346,11 +346,32 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     return;
                 }
 
-                // Check if we need to rebuild all series (first time or major changes)
-                // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
-                bool needRebuild = _previousPositions.Count == 0 || 
-                                 Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
-                                 HasSignificantPositionChanges(deals);
+                            // Check if we need to rebuild all series (first time or major changes)
+            // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
+            bool needRebuild = _previousPositions.Count == 0 || 
+                             Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
+                             HasSignificantPositionChanges(deals);
+                             
+            // Always rebuild if there are stop/profit order changes to ensure immediate visibility
+            // Всегда перестраиваем, если есть изменения в стоп/профит ордерах для обеспечения немедленной видимости
+            if (!needRebuild && _previousPositions.Count > 0)
+            {
+                foreach (var currentPos in deals)
+                {
+                    var previousPos = _previousPositions.FirstOrDefault(p => p.Number == currentPos.Number);
+                    if (previousPos != null)
+                    {
+                        if (previousPos.StopOrderIsActive != currentPos.StopOrderIsActive ||
+                            previousPos.StopOrderRedLine != currentPos.StopOrderRedLine ||
+                            previousPos.ProfitOrderIsActive != currentPos.ProfitOrderIsActive ||
+                            previousPos.ProfitOrderRedLine != currentPos.ProfitOrderRedLine)
+                        {
+                            needRebuild = true;
+                            break;
+                        }
+                    }
+                }
+            }
 
                 if (needRebuild)
                 {
@@ -376,6 +397,20 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Force chart redraw to ensure all changes are visible (same approach as indicators)
                 // Принудительно обновляем график для обеспечения видимости всех изменений (тот же подход, что и для индикаторов)
                 Redraw();
+                
+                // Force immediate chart refresh for stop/profit order lines
+                // Принудительно немедленно обновляем график для линий стоп/профит ордеров
+                if (plot_view != null && plot_view.Dispatcher != null)
+                {
+                    plot_view.Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            plot_view.InvalidatePlot(false);
+                        }
+                        catch { /* Ignore errors during immediate chart refresh */ }
+                    });
+                }
             };
 
             actions_to_calculate.Enqueue(positions_action);
@@ -653,9 +688,9 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             var stopBuyAnnotations = new List<LineAnnotation>();
             var stopSellAnnotations = new List<LineAnnotation>();
 
-            // Filter positions with status "Opening" or "Closing" for orders
-            // Фильтруем позиции со статусом "Открытие" или "Закрытие" для ордеров
-            var positions_with_orders = deals.Where(x => x.State == PositionStateType.Opening || x.State == PositionStateType.Closing).ToArray();
+            // Filter positions with status "Opening", "Closing", or "Open" for orders
+            // Фильтруем позиции со статусом "Открытие", "Закрытие" или "Открыта" для ордеров
+            var positions_with_orders = deals.Where(x => x.State == PositionStateType.Opening || x.State == PositionStateType.Closing || x.State == PositionStateType.Open).ToArray();
 
             foreach (var position in positions_with_orders)
             {
@@ -697,7 +732,24 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 plot_model.Annotations.Add(annotation);
                 _limitOrderLineAnnotations.Add(annotation);
             }
-                
+            
+            // Refresh the chart to show the new annotations
+            // Обновляем график для отображения новых аннотаций
+            plot_model.InvalidatePlot(false);
+            
+            // Force immediate chart refresh to ensure stop/profit lines are visible
+            // Принудительно немедленно обновляем график для обеспечения видимости линий стоп/профит
+            if (plot_view != null && plot_view.Dispatcher != null)
+            {
+                plot_view.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        plot_view.InvalidatePlot(false);
+                    }
+                    catch { /* Ignore errors during immediate chart refresh */ }
+                });
+            }
         }
 
         /// <summary>
