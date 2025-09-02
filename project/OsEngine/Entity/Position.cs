@@ -665,16 +665,27 @@ namespace OsEngine.Entity
                     && CloseActive == false
                     && OpenVolume != 0)
                 {
-                    //AlertMessageManager.ThrowAlert(null, "Fail", "");
-                    State = PositionStateType.ClosingFail;
+                    if (closeOrder.VolumeExecute == 0)
+                    {
+                        State = PositionStateType.Open;
+                    }
+                    else
+                    {
+                        State = PositionStateType.ClosingFail;
+                    }
                 }
                 else if (closeOrder.State == OrderStateType.Cancel 
                     && CloseActive == false
                     && OpenVolume != 0)
                 {
-                    // if not fully closed and this is the last order in the closing orders
-                    //AlertMessageManager.ThrowAlert(null, "Cancel", "");
-                    State = PositionStateType.ClosingFail;
+                    if (closeOrder.VolumeExecute == 0)
+                    {
+                        State = PositionStateType.Open;
+                    }
+                    else
+                    {
+                        State = PositionStateType.ClosingFail;
+                    }
                 }
                 else if (closeOrder.State == OrderStateType.Done 
                     && OpenVolume < 0)
