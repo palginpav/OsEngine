@@ -352,24 +352,9 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     return;
                 }
 
-                // Check if we need to rebuild all series (first time or major changes)
-                // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
-                bool needRebuild = _previousPositions.Count == 0 || 
-                                 Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
-                                 HasSignificantPositionChanges(deals);
-
-                if (needRebuild)
-                {
-                    // Rebuild all series from scratch
-                    // Перестраиваем все серии с нуля
-                    RebuildAllPositionSeries(deals);
-                }
-                else
-                {
-                    // Update only changed positions
-                    // Обновляем только измененные позиции
-                    UpdateChangedPositions(deals);
-                }
+                // Always rebuild all series when positions change - simpler and more reliable
+                // Всегда перестраиваем все серии при изменении позиций - проще и надежнее
+                RebuildAllPositionSeries(deals);
 
                 // Store current positions for next comparison
                 // Сохраняем текущие позиции для следующего сравнения
@@ -379,6 +364,20 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Сохраняем текущие позиции для обновления аннотаций
                 _currentPositions = deals;
 
+                // Update stop/profit annotations immediately when positions change
+                // Обновляем аннотации стоп/профит немедленно при изменении позиций
+                if (plot_view != null && plot_view.Dispatcher != null)
+                {
+                    plot_view.Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            UpdateStopProfitAnnotations();
+                        }
+                        catch { /* Ignore errors during annotation update */ }
+                    });
+                }
+
                 // Force chart redraw to ensure all changes are visible (same approach as indicators)
                 // Принудительно обновляем график для обеспечения видимости всех изменений (тот же подход, что и для индикаторов)
                 Redraw();
@@ -387,39 +386,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             actions_to_calculate.Enqueue(positions_action);
         }
 
-        /// <summary>
-        /// Check if there are significant changes in positions that require full rebuild
-        /// Проверяем, есть ли серьезные изменения в позициях, требующие полной перестройки
-        /// </summary>
-        private bool HasSignificantPositionChanges(List<Position> currentDeals)
-        {
-            if (_previousPositions.Count != currentDeals.Count)
-                return true;
 
-            // Check if any existing positions have significant changes
-            // Проверяем, есть ли у существующих позиций серьезные изменения
-            foreach (var currentPos in currentDeals)
-            {
-                var previousPos = _previousPositions.FirstOrDefault(p => p.Number == currentPos.Number);
-                if (previousPos == null)
-                    return true; // New position added
-
-                // Check for significant changes
-                // Проверяем серьезные изменения
-                if (previousPos.State != currentPos.State ||
-                    previousPos.Direction != currentPos.Direction ||
-                    previousPos.ProfitOperationAbs != currentPos.ProfitOperationAbs ||
-                    previousPos.StopOrderIsActive != currentPos.StopOrderIsActive ||
-                    previousPos.StopOrderRedLine != currentPos.StopOrderRedLine ||
-                    previousPos.ProfitOrderIsActive != currentPos.ProfitOrderIsActive ||
-                    previousPos.ProfitOrderRedLine != currentPos.ProfitOrderRedLine)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
 
         /// <summary>
         /// Clone position for comparison purposes
@@ -1668,6 +1635,14 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     }
 
                     plot_view.InvalidatePlot(true);
+                    
+                    // Update stop/profit annotations after redrawing
+                    // Обновляем аннотации стоп/профит после перерисовки
+                    try
+                    {
+                        UpdateStopProfitAnnotations();
+                    }
+                    catch { /* Ignore errors during annotation update */ }
                 }
             };
 
