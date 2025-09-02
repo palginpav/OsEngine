@@ -61,9 +61,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         private object candle_locker = new object();
 
-        // Store previous positions list to detect changes
-        // Сохраняем предыдущий список позиций для обнаружения изменений
-        private List<Position> _previousPositions = new List<Position>();
+
         
         // Store current positions for annotation updates
         // Сохраняем текущие позиции для обновления аннотаций
@@ -330,10 +328,9 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Если список позиций пуст, очищаем все серии, связанные с позициями, и возвращаемся
                 if (deals.Count == 0)
                 {
-                    // Clear all position series and reset previous positions
-                    // Очищаем все серии позиций и сбрасываем предыдущие позиции
+                    // Clear all position series
+                    // Очищаем все серии позиций
                     ClearAllPositionSeries();
-                    _previousPositions.Clear();
                     _currentPositions.Clear();
                     
                     // Ensure chart is refreshed to remove any lingering markers
@@ -356,9 +353,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Всегда перестраиваем все серии при изменении позиций - проще и надежнее
                 RebuildAllPositionSeries(deals);
 
-                // Store current positions for next comparison
-                // Сохраняем текущие позиции для следующего сравнения
-                _previousPositions = deals.Select(p => ClonePosition(p)).ToList();
+
                 
                 // Store current positions for annotation updates
                 // Сохраняем текущие позиции для обновления аннотаций
@@ -388,24 +383,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
 
 
-        /// <summary>
-        /// Clone position for comparison purposes
-        /// Клонируем позицию для целей сравнения
-        /// </summary>
-        private Position ClonePosition(Position original)
-        {
-            return new Position
-            {
-                Number = original.Number,
-                State = original.State,
-                Direction = original.Direction,
-                ProfitOperationAbs = original.ProfitOperationAbs,
-                StopOrderIsActive = original.StopOrderIsActive,
-                StopOrderRedLine = original.StopOrderRedLine,
-                ProfitOrderIsActive = original.ProfitOrderIsActive,
-                ProfitOrderRedLine = original.ProfitOrderRedLine
-            };
-        }
+        // ClonePosition method moved to CandleStickAreaHelper
 
         /// <summary>
         /// Rebuild all position series from scratch
@@ -417,74 +395,41 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Сначала очищаем существующие серии
             ClearAllPositionSeries();
 
-            // Create new scatter series for position markers
-            // Создаем новые точечные серии для маркеров позиций
-            var open_long_deals_series = new ScatterSeries()
-            {
-                Tag = "open_long_deals_series",
-                MarkerType = MarkerType.Custom,
-                MarkerSize = 4,
-                MarkerStrokeThickness = 0.5,
-                MarkerStroke = OxyColors.AliceBlue,
-                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                MarkerFill = OxyColor.FromArgb(255, 13, 255, 0),
-                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) },
-            };
+            // Create new scatter series for position markers using helper
+            // Создаем новые точечные серии для маркеров позиций используя вспомогательный класс
+            var open_long_deals_series = CandleStickAreaHelper.CreatePositionScatterSeries(
+                "open_long_deals_series", 
+                OxyColor.FromArgb(255, 13, 255, 0),
+                new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) }
+            );
 
-            var open_short_deals_series = new ScatterSeries()
-            {
-                Tag = "open_short_deals_series",
-                MarkerType = MarkerType.Custom,
-                MarkerSize = 4,
-                MarkerStrokeThickness = 0.5,
-                MarkerStroke = OxyColors.AliceBlue,
-                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                MarkerFill = OxyColor.FromArgb(255, 255, 17, 0),
-                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) },
-            };
+            var open_short_deals_series = CandleStickAreaHelper.CreatePositionScatterSeries(
+                "open_short_deals_series", 
+                OxyColor.FromArgb(255, 255, 17, 0),
+                new[] { new ScreenPoint(0, 0), new ScreenPoint(-1.5, 1.5), new ScreenPoint(-1.5, -1.5) }
+            );
 
-            var close_long_deals_series = new ScatterSeries()
-            {
-                Tag = "close_long_deals_series",
-                MarkerType = MarkerType.Custom,
-                MarkerSize = 4,
-                MarkerStrokeThickness = 0.5,
-                MarkerStroke = OxyColors.AliceBlue,
-                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
-                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) },
-            };
+            var close_long_deals_series = CandleStickAreaHelper.CreatePositionScatterSeries(
+                "close_long_deals_series", 
+                OxyColor.FromArgb(255, 167, 168, 170),
+                new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) }
+            );
 
-            var close_short_deals_series = new ScatterSeries()
-            {
-                Tag = "close_short_deals_series",
-                MarkerType = MarkerType.Custom,
-                MarkerSize = 4,
-                MarkerStrokeThickness = 0.5,
-                MarkerStroke = OxyColors.AliceBlue,
-                EdgeRenderingMode = EdgeRenderingMode.Adaptive,
-                MarkerFill = OxyColor.FromArgb(255, 167, 168, 170),
-                MarkerOutline = new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) },
-            };
+            var close_short_deals_series = CandleStickAreaHelper.CreatePositionScatterSeries(
+                "close_short_deals_series", 
+                OxyColor.FromArgb(255, 167, 168, 170),
+                new[] { new ScreenPoint(0, 0), new ScreenPoint(1.5, -1.5), new ScreenPoint(1.5, 1.5) }
+            );
 
-            // Filter positions and create data points
-            // Фильтруем позиции и создаем точки данных
-            var long_deals = deals.Where(x => x.Direction == Side.Buy && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
-            var short_deals = deals.Where(x => x.Direction == Side.Sell && x.State != PositionStateType.OpeningFail && x.EntryPrice != 0).ToArray();
+            // Filter positions and create data points using helper
+            // Фильтруем позиции и создаем точки данных используя вспомогательный класс
+            var long_deals = CandleStickAreaHelper.FilterPositionsByDirection(deals, Side.Buy);
+            var short_deals = CandleStickAreaHelper.FilterPositionsByDirection(deals, Side.Sell);
 
-            var items_open_long = long_deals
-                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)).ToList();
-
-            var items_open_short = short_deals
-                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeOpen), (double)x.EntryPrice)).ToList();
-
-            var items_close_long = long_deals
-                             .Where(x => x.State == PositionStateType.Done)
-                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)).ToList();
-
-            var items_close_short = short_deals
-                             .Where(x => x.State == PositionStateType.Done)
-                             .Select(x => new ScatterPoint(DateTimeAxis.ToDouble(x.TimeClose), (double)x.ClosePrice)).ToList();
+            var items_open_long = CandleStickAreaHelper.CreateEntryPoints(long_deals);
+            var items_open_short = CandleStickAreaHelper.CreateEntryPoints(short_deals);
+            var items_close_long = CandleStickAreaHelper.CreateExitPoints(long_deals);
+            var items_close_short = CandleStickAreaHelper.CreateExitPoints(short_deals);
 
             // Add points to series
             // Добавляем точки в серии
@@ -517,37 +462,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         /// Update only changed positions without full rebuild
         /// Обновляем только измененные позиции без полной перестройки
         /// </summary>
-        private void UpdateChangedPositions(List<Position> currentDeals)
-        {
-            // Find deleted positions
-            // Находим удаленные позиции
-            var deletedPositions = _previousPositions.Where(p => 
-                !currentDeals.Any(cp => cp.Number == p.Number)).ToList();
 
-            // Find new positions
-            // Находим новые позиции
-            var newPositions = currentDeals.Where(cp => 
-                !_previousPositions.Any(pp => pp.Number == cp.Number)).ToList();
-
-            // Find modified positions
-            // Находим измененные позиции
-            var modifiedPositions = currentDeals.Where(cp => 
-                _previousPositions.Any(pp => pp.Number == cp.Number && 
-                    (pp.State != cp.State || 
-                     pp.Direction != cp.Direction ||
-                     pp.ProfitOperationAbs != cp.ProfitOperationAbs ||
-                     pp.StopOrderIsActive != cp.StopOrderIsActive ||
-                     pp.StopOrderRedLine != cp.StopOrderRedLine ||
-                     pp.ProfitOrderIsActive != cp.ProfitOrderIsActive ||
-                     pp.ProfitOrderRedLine != cp.ProfitOrderRedLine))).ToList();
-
-            // If there are any changes, rebuild everything (same approach as limit orders)
-            // Если есть любые изменения, перестраиваем все (тот же подход, что и для лимитных ордеров)
-            if (deletedPositions.Count > 0 || newPositions.Count > 0 || modifiedPositions.Count > 0)
-            {
-                RebuildAllPositionSeries(currentDeals);
-            }
-        }
 
         /// <summary>
         /// Process profit and loss lines for positions
@@ -1073,16 +988,16 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     {
                         for (int i = 0; i < my_candles.Count; i++)
                         {
-                            if (GetDecimalsCount(my_candles[i].Close) > digits)
-                                digits = GetDecimalsCount(my_candles[i].Close);
+                            if (CandleStickAreaHelper.GetDecimalsCount(my_candles[i].Close) > digits)
+                                digits = CandleStickAreaHelper.GetDecimalsCount(my_candles[i].Close);
                         }
                     }
                     else
                     {
                         for (int i = my_candles.Count - 20; i < my_candles.Count; i++)
                         {
-                            if (GetDecimalsCount(my_candles[i].Close) > digits)
-                                digits = GetDecimalsCount(my_candles[i].Close);
+                            if (CandleStickAreaHelper.GetDecimalsCount(my_candles[i].Close) > digits)
+                                digits = CandleStickAreaHelper.GetDecimalsCount(my_candles[i].Close);
                         }
                     }
 
@@ -1206,28 +1121,39 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     }
                 }
 
-                // Update annotations - following the exact same pattern as annotation_price
-                // Обновляем аннотации - следуем точно тому же паттерну что и annotation_price
+                // Update annotations - show only active ones, hide inactive ones
+                // Обновляем аннотации - показываем только активные, скрываем неактивные
                 for (int i = 0; i < annotation_limit_list.Count; i++)
                 {
+                    var annotation = annotation_limit_list[i];
+                    
                     if (i < activeLimitOrders.Count)
                     {
                         // Show annotation for this limit order
                         // Показываем аннотацию для этого лимитного ордера
                         var order = activeLimitOrders[i];
-                        var annotation = annotation_limit_list[i];
                         
                         // Update exactly like annotation_price does
                         // Обновляем точно так же как это делает annotation_price
                         annotation.TextPosition = new ScreenPoint(plot_view.ActualWidth - plot_model.Padding.Right, 
                             annotation.GetDataPointPosition(new OxyPlot.DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price)).Y);
                         annotation.Text = order.Price.ToString("F" + digits.ToString());
+                        
+                        // Ensure annotation is visible
+                        // Убеждаемся, что аннотация видима
+                        if (!plot_model.Annotations.Contains(annotation))
+                        {
+                            plot_model.Annotations.Add(annotation);
+                        }
                     }
                     else
                     {
-                        // Hide this annotation by setting empty text
-                        // Скрываем эту аннотацию, устанавливая пустой текст
-                        annotation_limit_list[i].Text = "";
+                        // Remove this annotation from chart when no longer needed
+                        // Удаляем эту аннотацию с графика, когда она больше не нужна
+                        if (plot_model.Annotations.Contains(annotation))
+                        {
+                            plot_model.Annotations.Remove(annotation);
+                        }
                     }
                 }
             }
@@ -1283,16 +1209,17 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     }
                 }
 
-                // Update annotations - following the exact same pattern as UpdateLimitOrderAnnotations
-                // Обновляем аннотации - следуем точно тому же паттерну что и UpdateLimitOrderAnnotations
+                // Update annotations - show only active ones, hide inactive ones
+                // Обновляем аннотации - показываем только активные, скрываем неактивные
                 for (int i = 0; i < annotation_stop_profit_list.Count; i++)
                 {
+                    var annotation = annotation_stop_profit_list[i];
+                    
                     if (i < activeStopProfitOrders.Count)
                     {
                         // Show annotation for this stop/profit order
                         // Показываем аннотацию для этого стоп/профит ордера
                         var orderInfo = activeStopProfitOrders[i];
-                        var annotation = annotation_stop_profit_list[i];
                         
                         // Update exactly like UpdateLimitOrderAnnotations does
                         // Обновляем точно так же как это делает UpdateLimitOrderAnnotations
@@ -1301,12 +1228,22 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                         annotation.Text = orderInfo.text;
                         annotation.Background = orderInfo.color;
                         annotation.Stroke = orderInfo.color;
+                        
+                        // Ensure annotation is visible
+                        // Убеждаемся, что аннотация видима
+                        if (!plot_model.Annotations.Contains(annotation))
+                        {
+                            plot_model.Annotations.Add(annotation);
+                        }
                     }
                     else
                     {
-                        // Hide this annotation by setting empty text
-                        // Скрываем эту аннотацию, устанавливая пустой текст
-                        annotation_stop_profit_list[i].Text = "";
+                        // Remove this annotation from chart when no longer needed
+                        // Удаляем эту аннотацию с графика, когда она больше не нужна
+                        if (plot_model.Annotations.Contains(annotation))
+                        {
+                            plot_model.Annotations.Remove(annotation);
+                        }
                     }
                 }
             }
@@ -1317,25 +1254,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             }
         }
 
-        private int GetDecimalsCount(decimal d)
-        {
-            int i = 0;
-            while (d * GetPow(10, 1 + i) % 10 != 0) { i++; }
-
-            return i;
-        }
-
-        private decimal GetPow(decimal num, int pow)
-        {
-            decimal num_n = 1;
-
-            for (int i = 0; i < pow; i++)
-            {
-                num_n *= num;
-            }
-
-            return num_n;
-        }
+        // GetDecimalsCount and GetPow methods moved to CandleStickAreaHelper
 
         public override void BuildIndicatorSeries(IndicatorSeria indi_seria, List<decimal> data_points, TimeSpan time_frame_span)
         {
