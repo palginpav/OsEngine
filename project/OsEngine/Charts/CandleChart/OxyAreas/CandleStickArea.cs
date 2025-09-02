@@ -73,6 +73,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         // Сохраняем аннотации линий лимитных ордеров для правильной очистки
         private List<LineAnnotation> _limitOrderLineAnnotations = new List<LineAnnotation>();
         
+        // List of stop/profit activation text annotations
+        // Список текстовых аннотаций для стоп/профит активации
+        private List<CustomTextAnnotation> _stopProfitTextAnnotations = new List<CustomTextAnnotation>();
+        
 
         public CandleStickArea(OxyAreaSettings settings, List<OxyArea> all_areas, OxyChartPainter owner) : base(settings, owner)
         {
@@ -681,6 +685,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Очищаем предыдущие аннотации линий лимитных ордеров
             ClearLimitOrderLineAnnotations();
             
+            // Clear previous stop/profit activation text annotations
+            // Очищаем предыдущие текстовые аннотации стоп/профит активации
+            ClearStopProfitTextAnnotations();
+            
             // Create line annotations for different order types
             // Создаем аннотации линий для различных типов ордеров
             var limitBuyAnnotations = new List<LineAnnotation>();
@@ -833,6 +841,26 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopBuyAnnotations.Add(lineAnnotation);
+                    
+                    // Create text annotation for stop activation
+                    // Создаем текстовую аннотацию для стоп активации
+                    var stopTextAnnotation = new CustomTextAnnotation()
+                    {
+                        Text = "StopAct",
+                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.StopOrderRedLine),
+                        TextHorizontalAlignment = HorizontalAlignment.Right,
+                        TextVerticalAlignment = VerticalAlignment.Middle,
+                        Background = OxyColor.FromArgb(255, 13, 255, 0), // Green background for buy
+                        TextColor = OxyColors.White,
+                        Stroke = OxyColor.FromArgb(255, 13, 255, 0),
+                        StrokeThickness = 1,
+                        Padding = new OxyThickness(4),
+                        Layer = AnnotationLayer.AboveSeries,
+                        Tag = "stop_activation_text"
+                    };
+                    
+                    plot_model.Annotations.Add(stopTextAnnotation);
+                    _stopProfitTextAnnotations.Add(stopTextAnnotation);
                 }
                 else if (position.Direction == Side.Sell)
                 {
@@ -852,6 +880,26 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopSellAnnotations.Add(lineAnnotation);
+                    
+                    // Create text annotation for stop activation
+                    // Создаем текстовую аннотацию для стоп активации
+                    var stopTextAnnotation = new CustomTextAnnotation()
+                    {
+                        Text = "StopAct",
+                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.StopOrderRedLine),
+                        TextHorizontalAlignment = HorizontalAlignment.Right,
+                        TextVerticalAlignment = VerticalAlignment.Middle,
+                        Background = OxyColor.FromArgb(255, 255, 17, 0), // Red background for sell
+                        TextColor = OxyColors.White,
+                        Stroke = OxyColor.FromArgb(255, 255, 17, 0),
+                        StrokeThickness = 1,
+                        Padding = new OxyThickness(4),
+                        Layer = AnnotationLayer.AboveSeries,
+                        Tag = "stop_activation_text"
+                    };
+                    
+                    plot_model.Annotations.Add(stopTextAnnotation);
+                    _stopProfitTextAnnotations.Add(stopTextAnnotation);
                 }
             }
 
@@ -877,6 +925,26 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopSellAnnotations.Add(lineAnnotation);
+                    
+                    // Create text annotation for profit activation
+                    // Создаем текстовую аннотацию для профит активации
+                    var profitTextAnnotation = new CustomTextAnnotation()
+                    {
+                        Text = "ProfitAct",
+                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.ProfitOrderRedLine),
+                        TextHorizontalAlignment = HorizontalAlignment.Right,
+                        TextVerticalAlignment = VerticalAlignment.Middle,
+                        Background = OxyColor.FromArgb(255, 255, 17, 0), // Red background for sell
+                        TextColor = OxyColors.White,
+                        Stroke = OxyColor.FromArgb(255, 255, 17, 0),
+                        StrokeThickness = 1,
+                        Padding = new OxyThickness(4),
+                        Layer = AnnotationLayer.AboveSeries,
+                        Tag = "profit_activation_text"
+                    };
+                    
+                    plot_model.Annotations.Add(profitTextAnnotation);
+                    _stopProfitTextAnnotations.Add(profitTextAnnotation);
                 }
                 else if (position.Direction == Side.Sell)
                 {
@@ -896,6 +964,26 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopBuyAnnotations.Add(lineAnnotation);
+                    
+                    // Create text annotation for profit activation
+                    // Создаем текстовую аннотацию для профит активации
+                    var profitTextAnnotation = new CustomTextAnnotation()
+                    {
+                        Text = "ProfitAct",
+                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.ProfitOrderRedLine),
+                        TextHorizontalAlignment = HorizontalAlignment.Right,
+                        TextVerticalAlignment = VerticalAlignment.Middle,
+                        Background = OxyColor.FromArgb(255, 13, 255, 0), // Green background for buy
+                        TextColor = OxyColors.White,
+                        Stroke = OxyColor.FromArgb(255, 13, 255, 0),
+                        StrokeThickness = 1,
+                        Padding = new OxyThickness(4),
+                        Layer = AnnotationLayer.AboveSeries,
+                        Tag = "profit_activation_text"
+                    };
+                    
+                    plot_model.Annotations.Add(profitTextAnnotation);
+                    _stopProfitTextAnnotations.Add(profitTextAnnotation);
                 }
             }
         }
@@ -940,6 +1028,27 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Clear the list
             // Очищаем список
             _limitOrderLineAnnotations.Clear();
+        }
+        
+        /// <summary>
+        /// Clear all stop/profit activation text annotations from the chart
+        /// Очищаем все текстовые аннотации стоп/профит активации с графика
+        /// </summary>
+        private void ClearStopProfitTextAnnotations()
+        {
+            // Remove all stop/profit activation text annotations from the plot model
+            // Удаляем все текстовые аннотации стоп/профит активации из модели графика
+            foreach (var annotation in _stopProfitTextAnnotations)
+            {
+                if (plot_model.Annotations.Contains(annotation))
+                {
+                    plot_model.Annotations.Remove(annotation);
+                }
+            }
+            
+            // Clear the list
+            // Очищаем список
+            _stopProfitTextAnnotations.Clear();
         }
 
         public void BuildCandleSeries()
