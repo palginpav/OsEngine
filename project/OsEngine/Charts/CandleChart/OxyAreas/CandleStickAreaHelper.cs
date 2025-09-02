@@ -14,25 +14,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
     /// </summary>
     public static class CandleStickAreaHelper
     {
-        /// <summary>
-        /// Clone position for comparison purposes
-        /// Клонируем позицию для целей сравнения
-        /// </summary>
-        public static Position ClonePosition(Position original)
-        {
-            return new Position
-            {
-                Number = original.Number,
-                State = original.State,
-                Direction = original.Direction,
-                ProfitOperationAbs = original.ProfitOperationAbs,
-                StopOrderIsActive = original.StopOrderIsActive,
-                StopOrderRedLine = original.StopOrderRedLine,
-                ProfitOrderIsActive = original.ProfitOrderIsActive,
-                ProfitOrderRedLine = original.ProfitOrderRedLine
-            };
-        }
-
+        
         /// <summary>
         /// Get the number of decimal places in a decimal number
         /// Получаем количество знаков после запятой в десятичном числе
@@ -90,7 +72,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         /// <summary>
         /// Create scatter points for position entries
-        /// Создаем точечные точки для входов в позиции
+        /// Создаем точки данных для входов в позиции
         /// </summary>
         public static List<ScatterPoint> CreateEntryPoints(Position[] positions)
         {
@@ -101,7 +83,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         /// <summary>
         /// Create scatter points for position exits
-        /// Создаем точечные точки для выходов из позиций
+        /// Создаем точки данных для выходов из позиций
         /// </summary>
         public static List<ScatterPoint> CreateExitPoints(Position[] positions)
         {

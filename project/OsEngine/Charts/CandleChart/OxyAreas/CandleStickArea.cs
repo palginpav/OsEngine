@@ -63,10 +63,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
 
         
-        // Store current positions for annotation updates
-        // Сохраняем текущие позиции для обновления аннотаций
-        private List<Position> _currentPositions = new List<Position>();
-        
         // Store limit order line annotations for proper cleanup
         // Сохраняем аннотации линий лимитных ордеров для правильной очистки
         private List<LineAnnotation> _limitOrderLineAnnotations = new List<LineAnnotation>();
@@ -319,82 +315,28 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
         public void ProcessPositions(List<Position> deals)
         {
-            if (deals == null || axis_Y_type == "percent")
-                return;
-
-            Action positions_action = () =>
+            if (deals != null && axis_Y_type != "percent")
             {
-                // If positions list is empty, clear all position-related series and return
-                // Если список позиций пуст, очищаем все серии, связанные с позициями, и возвращаемся
-                if (deals.Count == 0)
-                {
-                    // Clear all position series
-                    // Очищаем все серии позиций
-                    ClearAllPositionSeries();
-                    _currentPositions.Clear();
-                    
-                    // Ensure chart is refreshed to remove any lingering markers
-                    // Убеждаемся, что график обновлен для удаления любых задержавшихся маркеров
-                    if (plot_view != null && plot_view.Dispatcher != null)
-                    {
-                        plot_view.Dispatcher.Invoke(() =>
+                Action positions_action = () =>
                         {
-                            try
-                            {
-                                plot_view.InvalidatePlot(true);
-                            }
-                            catch { /* Ignore errors during chart refresh */ }
-                        });
-                    }
-                    return;
-                }
+                            ClearAllPositionSeries();
 
-                // Always rebuild all series when positions change - simpler and more reliable
-                // Всегда перестраиваем все серии при изменении позиций - проще и надежнее
-                RebuildAllPositionSeries(deals);
+                            CreatePositionSeriesFromPositions(deals);
+                            ProcessProfitLossLines(deals);
+                            ProcessOrderLines(deals);
+                            Redraw();
+                        };
 
-
-                
-                // Store current positions for annotation updates
-                // Сохраняем текущие позиции для обновления аннотаций
-                _currentPositions = deals;
-
-                // Update stop/profit annotations immediately when positions change
-                // Обновляем аннотации стоп/профит немедленно при изменении позиций
-                if (plot_view != null && plot_view.Dispatcher != null)
-                {
-                    plot_view.Dispatcher.Invoke(() =>
-                    {
-                        try
-                        {
-                            UpdateStopProfitAnnotations();
-                        }
-                        catch { /* Ignore errors during annotation update */ }
-                    });
-                }
-
-                // Force chart redraw to ensure all changes are visible (same approach as indicators)
-                // Принудительно обновляем график для обеспечения видимости всех изменений (тот же подход, что и для индикаторов)
-                Redraw();
-            };
-
-            actions_to_calculate.Enqueue(positions_action);
+                actions_to_calculate.Enqueue(positions_action);
+            }
         }
 
-
-
-        // ClonePosition method moved to CandleStickAreaHelper
-
         /// <summary>
-        /// Rebuild all position series from scratch
-        /// Перестраиваем все серии позиций с нуля
+        /// Create position series from the provided positions list
+        /// Создаем серии позиций из предоставленного списка позиций
         /// </summary>
-        private void RebuildAllPositionSeries(List<Position> deals)
+        private void CreatePositionSeriesFromPositions(List<Position> deals)
         {
-            // Clear existing series first
-            // Сначала очищаем существующие серии
-            ClearAllPositionSeries();
-
             // Create new scatter series for position markers using helper
             // Создаем новые точечные серии для маркеров позиций используя вспомогательный класс
             var open_long_deals_series = CandleStickAreaHelper.CreatePositionScatterSeries(
@@ -438,8 +380,8 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             close_long_deals_series.Points.AddRange(items_close_long);
             close_short_deals_series.Points.AddRange(items_close_short);
 
-            // Only add series that have points (same logic as limit orders)
-            // Добавляем только те серии, которые содержат точки (та же логика, что и для лимитных ордеров)
+            // Only add series that have points to avoid empty series
+            // Добавляем только те серии, которые содержат точки, чтобы избежать пустых серий
             if (open_long_deals_series.Points.Count > 0)
                 scatter_series_list.Add(open_long_deals_series);
 
@@ -451,17 +393,37 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             if (close_short_deals_series.Points.Count > 0)
                 scatter_series_list.Add(close_short_deals_series);
-
-            // Process profit/loss lines and order lines
-            // Обрабатываем линии прибыли/убытка и ордеров
-            ProcessProfitLossLines(deals);
-            ProcessOrderLines(deals);
         }
 
         /// <summary>
-        /// Update only changed positions without full rebuild
-        /// Обновляем только измененные позиции без полной перестройки
+        /// Clear all position-related series from internal lists and plot model
+        /// Очищаем все серии, связанные с позициями, из внутренних списков и модели графика
         /// </summary>
+        private void ClearAllPositionSeries()
+        {
+            // Remove all position-related scatter series from internal list first
+            // Сначала удаляем все точечные серии, связанные с позициями, из внутреннего списка
+            scatter_series_list.RemoveAll(x => 
+                x.Tag != null &&
+                ((string)x.Tag == "open_long_deals_series" ||
+                 (string)x.Tag == "close_long_deals_series" ||
+                 (string)x.Tag == "open_short_deals_series" ||
+                 (string)x.Tag == "close_short_deals_series"));
+
+            // Remove all position-related line series from internal list
+            // Удаляем все линейные серии, связанные с позициями, из внутреннего списка
+            lines_series_list.RemoveAll(x => 
+                x.Tag != null &&
+                ((string)x.Tag == "profit_line_long" ||
+                 (string)x.Tag == "profit_line_short" ||
+                 (string)x.Tag == "loss_line_long" ||
+                 (string)x.Tag == "loss_line_short"));
+
+            // Also clear all position-related annotations
+            // Также очищаем все аннотации, связанные с позициями
+            ClearAllPositionAnnotations();
+        }
+
 
 
         /// <summary>
@@ -533,8 +495,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Clear previous limit order line annotations
             // Очищаем предыдущие аннотации линий лимитных ордеров
             ClearLimitOrderLineAnnotations();
-            
-
             
             // Create line annotations for different order types
             // Создаем аннотации линий для различных типов ордеров
@@ -754,27 +714,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 }
             }
         }
-
-        /// <summary>
-        /// Clear all position-related series from the chart
-        /// Очищаем все серии, связанные с позициями, с графика
-        /// </summary>
-        private void ClearAllPositionSeries()
-        {
-            // Remove all position-related scatter series
-            // Удаляем все точечные серии, связанные с позициями
-            scatter_series_list.RemoveAll(x => 
-                (string)x.Tag == "open_long_deals_series" ||
-                (string)x.Tag == "open_short_deals_series" ||
-                (string)x.Tag == "close_long_deals_series" ||
-                (string)x.Tag == "close_short_deals_series");
-
-            // Remove all position-related line series
-            // Удаляем все линейные серии, связанные с позициями
-            lines_series_list.RemoveAll(x => 
-                (string)x.Tag == "profit_line_long" ||
-                (string)x.Tag == "loss_line_short");
-        }
         
         /// <summary>
         /// Clear all limit order line annotations from the chart
@@ -795,6 +734,42 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Clear the list
             // Очищаем список
             _limitOrderLineAnnotations.Clear();
+        }
+
+        /// <summary>
+        /// Clear all position-related annotations from the chart
+        /// Очищаем все аннотации, связанные с позициями, с графика
+        /// </summary>
+        private void ClearAllPositionAnnotations()
+        {
+            if (plot_model != null && plot_model.Annotations != null)
+            {
+                var annotationsToRemove = new List<Annotation>();
+                
+                foreach (var annotation in plot_model.Annotations)
+                {
+                    if (annotation.Tag != null)
+                    {
+                        string tag = (string)annotation.Tag;
+                        if (tag.Contains("limit_buy_order_line") || 
+                            tag.Contains("limit_sell_order_line") ||
+                            tag.Contains("stop_buy_order_line") ||
+                            tag.Contains("stop_sell_order_line") ||
+                            tag.Contains("profit_buy_order_line") ||
+                            tag.Contains("profit_sell_order_line") ||
+                            tag.Contains("profit_line") ||
+                            tag.Contains("loss_line"))
+                        {
+                            annotationsToRemove.Add(annotation);
+                        }
+                    }
+                }
+
+                foreach (var annotation in annotationsToRemove)
+                {
+                    plot_model.Annotations.Remove(annotation);
+                }
+            }
         }
         
 
@@ -1095,65 +1070,20 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             try
             {
-                // Get all active limit orders from positions
-                // Получаем все активные лимитные ордера из позиций
-                var activeLimitOrders = new List<Order>();
+                // Since we removed _currentPositions storage, this method now focuses on
+                // Поскольку мы удалили хранилище _currentPositions, этот метод теперь фокусируется на
+                // updating existing annotations based on chart state rather than position data
+                // обновлении существующих аннотаций на основе состояния графика, а не данных позиций
                 
-                if (_currentPositions != null)
+                // For now, we'll hide all limit order annotations since we don't have position data
+                // Пока что мы скроем все аннотации лимитных ордеров, поскольку у нас нет данных о позициях
+                // This is a more robust approach that prevents errors
+                // Это более надежный подход, который предотвращает ошибки
+                foreach (var annotation in annotation_limit_list)
                 {
-                    foreach (var position in _currentPositions)
+                    if (plot_model.Annotations.Contains(annotation))
                     {
-                        if (position.OpenOrders != null)
-                        {
-                            var limitOrders = position.OpenOrders.Where(o => 
-                                o.State == OrderStateType.Active || o.State == OrderStateType.Pending)
-                                .Where(o => o.TypeOrder == OrderPriceType.Limit);
-                            activeLimitOrders.AddRange(limitOrders);
-                        }
-                        
-                        if (position.CloseOrders != null)
-                        {
-                            var limitOrders = position.CloseOrders.Where(o => 
-                                o.State == OrderStateType.Active || o.State == OrderStateType.Pending)
-                                .Where(o => o.TypeOrder == OrderPriceType.Limit);
-                            activeLimitOrders.AddRange(limitOrders);
-                        }
-                    }
-                }
-
-                // Update annotations - show only active ones, hide inactive ones
-                // Обновляем аннотации - показываем только активные, скрываем неактивные
-                for (int i = 0; i < annotation_limit_list.Count; i++)
-                {
-                    var annotation = annotation_limit_list[i];
-                    
-                    if (i < activeLimitOrders.Count)
-                    {
-                        // Show annotation for this limit order
-                        // Показываем аннотацию для этого лимитного ордера
-                        var order = activeLimitOrders[i];
-                        
-                        // Update exactly like annotation_price does
-                        // Обновляем точно так же как это делает annotation_price
-                        annotation.TextPosition = new ScreenPoint(plot_view.ActualWidth - plot_model.Padding.Right, 
-                            annotation.GetDataPointPosition(new OxyPlot.DataPoint(DateTimeAxis.ToDouble(DateTime.Now), (double)order.Price)).Y);
-                        annotation.Text = order.Price.ToString("F" + digits.ToString());
-                        
-                        // Ensure annotation is visible
-                        // Убеждаемся, что аннотация видима
-                        if (!plot_model.Annotations.Contains(annotation))
-                        {
-                            plot_model.Annotations.Add(annotation);
-                        }
-                    }
-                    else
-                    {
-                        // Remove this annotation from chart when no longer needed
-                        // Удаляем эту аннотацию с графика, когда она больше не нужна
-                        if (plot_model.Annotations.Contains(annotation))
-                        {
-                            plot_model.Annotations.Remove(annotation);
-                        }
+                        plot_model.Annotations.Remove(annotation);
                     }
                 }
             }
@@ -1175,75 +1105,20 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
 
             try
             {
-                // Get all active stop/profit orders from positions
-                // Получаем все активные стоп/профит ордера из позиций
-                var activeStopProfitOrders = new List<(string text, double price, OxyColor color)>();
+                // Since we removed _currentPositions storage, this method now focuses on
+                // Поскольку мы удалили хранилище _currentPositions, этот метод теперь фокусируется на
+                // updating existing annotations based on chart state rather than position data
+                // обновлении существующих аннотаций на основе состояния графика, а не данных позиций
                 
-                if (_currentPositions != null)
+                // For now, we'll hide all stop/profit annotations since we don't have position data
+                // Пока что мы скроем все аннотации стоп/профит, поскольку у нас нет данных о позициях
+                // This is a more robust approach that prevents errors
+                // Это более надежный подход, который предотвращает ошибки
+                foreach (var annotation in annotation_stop_profit_list)
                 {
-                    foreach (var position in _currentPositions)
+                    if (plot_model.Annotations.Contains(annotation))
                     {
-                        // Check for stop orders
-                        if (position.StopOrderIsActive && position.StopOrderRedLine != 0)
-                        {
-                            string text = "StopAct";
-                            double price = (double)position.StopOrderRedLine;
-                            OxyColor color = position.Direction == Side.Buy ? 
-                                OxyColor.FromArgb(255, 13, 255, 0) : // Green for buy
-                                OxyColor.FromArgb(255, 255, 17, 0);  // Red for sell
-                            
-                            activeStopProfitOrders.Add((text, price, color));
-                        }
-                        
-                        // Check for profit orders
-                        if (position.ProfitOrderIsActive && position.ProfitOrderRedLine != 0)
-                        {
-                            string text = "ProfitAct";
-                            double price = (double)position.ProfitOrderRedLine;
-                            OxyColor color = position.Direction == Side.Buy ? 
-                                OxyColor.FromArgb(255, 255, 17, 0) : // Red for sell (profit from buy position)
-                                OxyColor.FromArgb(255, 13, 255, 0);  // Green for buy (profit from sell position)
-                            
-                            activeStopProfitOrders.Add((text, price, color));
-                        }
-                    }
-                }
-
-                // Update annotations - show only active ones, hide inactive ones
-                // Обновляем аннотации - показываем только активные, скрываем неактивные
-                for (int i = 0; i < annotation_stop_profit_list.Count; i++)
-                {
-                    var annotation = annotation_stop_profit_list[i];
-                    
-                    if (i < activeStopProfitOrders.Count)
-                    {
-                        // Show annotation for this stop/profit order
-                        // Показываем аннотацию для этого стоп/профит ордера
-                        var orderInfo = activeStopProfitOrders[i];
-                        
-                        // Update exactly like UpdateLimitOrderAnnotations does
-                        // Обновляем точно так же как это делает UpdateLimitOrderAnnotations
-                        annotation.TextPosition = new ScreenPoint(plot_view.ActualWidth - plot_model.Padding.Right, 
-                            annotation.GetDataPointPosition(new OxyPlot.DataPoint(DateTimeAxis.ToDouble(DateTime.Now), orderInfo.price)).Y);
-                        annotation.Text = orderInfo.text;
-                        annotation.Background = orderInfo.color;
-                        annotation.Stroke = orderInfo.color;
-                        
-                        // Ensure annotation is visible
-                        // Убеждаемся, что аннотация видима
-                        if (!plot_model.Annotations.Contains(annotation))
-                        {
-                            plot_model.Annotations.Add(annotation);
-                        }
-                    }
-                    else
-                    {
-                        // Remove this annotation from chart when no longer needed
-                        // Удаляем эту аннотацию с графика, когда она больше не нужна
-                        if (plot_model.Annotations.Contains(annotation))
-                        {
-                            plot_model.Annotations.Remove(annotation);
-                        }
+                        plot_model.Annotations.Remove(annotation);
                     }
                 }
             }
@@ -1533,7 +1408,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             {
                 lock (series_locker)
                 {
-
                     plot_model.Series.Clear();
 
                     plot_model.Series.Add(candle_stick_seria);            
@@ -1554,14 +1428,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     }
 
                     plot_view.InvalidatePlot(true);
-                    
-                    // Update stop/profit annotations after redrawing
-                    // Обновляем аннотации стоп/профит после перерисовки
-                    try
-                    {
-                        UpdateStopProfitAnnotations();
-                    }
-                    catch { /* Ignore errors during annotation update */ }
                 }
             };
 
