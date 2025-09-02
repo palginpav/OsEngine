@@ -73,9 +73,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         // Сохраняем аннотации линий лимитных ордеров для правильной очистки
         private List<LineAnnotation> _limitOrderLineAnnotations = new List<LineAnnotation>();
         
-        // List of stop/profit activation text annotations
-        // Список текстовых аннотаций для стоп/профит активации
-        private List<CustomTextAnnotation> _stopProfitTextAnnotations = new List<CustomTextAnnotation>();
+
         
 
         public CandleStickArea(OxyAreaSettings settings, List<OxyArea> all_areas, OxyChartPainter owner) : base(settings, owner)
@@ -283,6 +281,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Update limit order annotations - following the exact same pattern as annotation_price
                 // Обновляем аннотации лимитных ордеров - следуем точно тому же паттерну что и annotation_price
                 UpdateLimitOrderAnnotations();
+                
+                // Update stop/profit activation annotations - following the exact same pattern as UpdateLimitOrderAnnotations
+                // Обновляем аннотации стоп/профит активации - следуем точно тому же паттерну что и UpdateLimitOrderAnnotations
+                UpdateStopProfitAnnotations();
             };
 
             actions_to_calculate.Enqueue(action);
@@ -350,32 +352,11 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     return;
                 }
 
-                            // Check if we need to rebuild all series (first time or major changes)
-            // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
-            bool needRebuild = _previousPositions.Count == 0 || 
-                             Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
-                             HasSignificantPositionChanges(deals);
-                             
-            // Always rebuild if there are stop/profit order changes to ensure immediate visibility
-            // Всегда перестраиваем, если есть изменения в стоп/профит ордерах для обеспечения немедленной видимости
-            if (!needRebuild && _previousPositions.Count > 0)
-            {
-                foreach (var currentPos in deals)
-                {
-                    var previousPos = _previousPositions.FirstOrDefault(p => p.Number == currentPos.Number);
-                    if (previousPos != null)
-                    {
-                        if (previousPos.StopOrderIsActive != currentPos.StopOrderIsActive ||
-                            previousPos.StopOrderRedLine != currentPos.StopOrderRedLine ||
-                            previousPos.ProfitOrderIsActive != currentPos.ProfitOrderIsActive ||
-                            previousPos.ProfitOrderRedLine != currentPos.ProfitOrderRedLine)
-                        {
-                            needRebuild = true;
-                            break;
-                        }
-                    }
-                }
-            }
+                // Check if we need to rebuild all series (first time or major changes)
+                // Проверяем, нужно ли перестроить все серии (первый раз или серьезные изменения)
+                bool needRebuild = _previousPositions.Count == 0 || 
+                                 Math.Abs(_previousPositions.Count - deals.Count) > 1 ||
+                                 HasSignificantPositionChanges(deals);
 
                 if (needRebuild)
                 {
@@ -401,20 +382,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                 // Force chart redraw to ensure all changes are visible (same approach as indicators)
                 // Принудительно обновляем график для обеспечения видимости всех изменений (тот же подход, что и для индикаторов)
                 Redraw();
-                
-                // Force immediate chart refresh for stop/profit order lines
-                // Принудительно немедленно обновляем график для линий стоп/профит ордеров
-                if (plot_view != null && plot_view.Dispatcher != null)
-                {
-                    plot_view.Dispatcher.Invoke(() =>
-                    {
-                        try
-                        {
-                            plot_view.InvalidatePlot(false);
-                        }
-                        catch { /* Ignore errors during immediate chart refresh */ }
-                    });
-                }
             };
 
             actions_to_calculate.Enqueue(positions_action);
@@ -685,9 +652,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             // Очищаем предыдущие аннотации линий лимитных ордеров
             ClearLimitOrderLineAnnotations();
             
-            // Clear previous stop/profit activation text annotations
-            // Очищаем предыдущие текстовые аннотации стоп/профит активации
-            ClearStopProfitTextAnnotations();
+
             
             // Create line annotations for different order types
             // Создаем аннотации линий для различных типов ордеров
@@ -841,26 +806,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopBuyAnnotations.Add(lineAnnotation);
-                    
-                    // Create text annotation for stop activation
-                    // Создаем текстовую аннотацию для стоп активации
-                    var stopTextAnnotation = new CustomTextAnnotation()
-                    {
-                        Text = "StopAct",
-                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.StopOrderRedLine),
-                        TextHorizontalAlignment = HorizontalAlignment.Right,
-                        TextVerticalAlignment = VerticalAlignment.Middle,
-                        Background = OxyColor.FromArgb(255, 13, 255, 0), // Green background for buy
-                        TextColor = OxyColors.White,
-                        Stroke = OxyColor.FromArgb(255, 13, 255, 0),
-                        StrokeThickness = 1,
-                        Padding = new OxyThickness(4),
-                        Layer = AnnotationLayer.AboveSeries,
-                        Tag = "stop_activation_text"
-                    };
-                    
-                    plot_model.Annotations.Add(stopTextAnnotation);
-                    _stopProfitTextAnnotations.Add(stopTextAnnotation);
                 }
                 else if (position.Direction == Side.Sell)
                 {
@@ -880,26 +825,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopSellAnnotations.Add(lineAnnotation);
-                    
-                    // Create text annotation for stop activation
-                    // Создаем текстовую аннотацию для стоп активации
-                    var stopTextAnnotation = new CustomTextAnnotation()
-                    {
-                        Text = "StopAct",
-                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.StopOrderRedLine),
-                        TextHorizontalAlignment = HorizontalAlignment.Right,
-                        TextVerticalAlignment = VerticalAlignment.Middle,
-                        Background = OxyColor.FromArgb(255, 255, 17, 0), // Red background for sell
-                        TextColor = OxyColors.White,
-                        Stroke = OxyColor.FromArgb(255, 255, 17, 0),
-                        StrokeThickness = 1,
-                        Padding = new OxyThickness(4),
-                        Layer = AnnotationLayer.AboveSeries,
-                        Tag = "stop_activation_text"
-                    };
-                    
-                    plot_model.Annotations.Add(stopTextAnnotation);
-                    _stopProfitTextAnnotations.Add(stopTextAnnotation);
                 }
             }
 
@@ -925,26 +850,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopSellAnnotations.Add(lineAnnotation);
-                    
-                    // Create text annotation for profit activation
-                    // Создаем текстовую аннотацию для профит активации
-                    var profitTextAnnotation = new CustomTextAnnotation()
-                    {
-                        Text = "ProfitAct",
-                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.ProfitOrderRedLine),
-                        TextHorizontalAlignment = HorizontalAlignment.Right,
-                        TextVerticalAlignment = VerticalAlignment.Middle,
-                        Background = OxyColor.FromArgb(255, 255, 17, 0), // Red background for sell
-                        TextColor = OxyColors.White,
-                        Stroke = OxyColor.FromArgb(255, 255, 17, 0),
-                        StrokeThickness = 1,
-                        Padding = new OxyThickness(4),
-                        Layer = AnnotationLayer.AboveSeries,
-                        Tag = "profit_activation_text"
-                    };
-                    
-                    plot_model.Annotations.Add(profitTextAnnotation);
-                    _stopProfitTextAnnotations.Add(profitTextAnnotation);
                 }
                 else if (position.Direction == Side.Sell)
                 {
@@ -964,26 +869,6 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
                     };
                     
                     stopBuyAnnotations.Add(lineAnnotation);
-                    
-                    // Create text annotation for profit activation
-                    // Создаем текстовую аннотацию для профит активации
-                    var profitTextAnnotation = new CustomTextAnnotation()
-                    {
-                        Text = "ProfitAct",
-                        TextPosition = new ScreenPoint(plot_model.Axes[0].ActualMaximum, (double)position.ProfitOrderRedLine),
-                        TextHorizontalAlignment = HorizontalAlignment.Right,
-                        TextVerticalAlignment = VerticalAlignment.Middle,
-                        Background = OxyColor.FromArgb(255, 13, 255, 0), // Green background for buy
-                        TextColor = OxyColors.White,
-                        Stroke = OxyColor.FromArgb(255, 13, 255, 0),
-                        StrokeThickness = 1,
-                        Padding = new OxyThickness(4),
-                        Layer = AnnotationLayer.AboveSeries,
-                        Tag = "profit_activation_text"
-                    };
-                    
-                    plot_model.Annotations.Add(profitTextAnnotation);
-                    _stopProfitTextAnnotations.Add(profitTextAnnotation);
                 }
             }
         }
@@ -1030,26 +915,7 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             _limitOrderLineAnnotations.Clear();
         }
         
-        /// <summary>
-        /// Clear all stop/profit activation text annotations from the chart
-        /// Очищаем все текстовые аннотации стоп/профит активации с графика
-        /// </summary>
-        private void ClearStopProfitTextAnnotations()
-        {
-            // Remove all stop/profit activation text annotations from the plot model
-            // Удаляем все текстовые аннотации стоп/профит активации из модели графика
-            foreach (var annotation in _stopProfitTextAnnotations)
-            {
-                if (plot_model.Annotations.Contains(annotation))
-                {
-                    plot_model.Annotations.Remove(annotation);
-                }
-            }
-            
-            // Clear the list
-            // Очищаем список
-            _stopProfitTextAnnotations.Clear();
-        }
+
 
         public void BuildCandleSeries()
         {
@@ -1402,6 +1268,85 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             {
                 // Handle any errors silently - following the same pattern as annotation_price
                 // Обрабатываем ошибки тихо - следуем тому же паттерну что и annotation_price
+            }
+        }
+        
+        /// <summary>
+        /// Update stop/profit activation annotations - following the exact same pattern as UpdateLimitOrderAnnotations
+        /// Обновляем аннотации стоп/профит активации - следуем точно тому же паттерну что и UpdateLimitOrderAnnotations
+        /// </summary>
+        private void UpdateStopProfitAnnotations()
+        {
+            if (plot_model == null || plot_view == null)
+                return;
+
+            try
+            {
+                // Get all active stop/profit orders from positions
+                // Получаем все активные стоп/профит ордера из позиций
+                var activeStopProfitOrders = new List<(string text, double price, OxyColor color)>();
+                
+                if (_currentPositions != null)
+                {
+                    foreach (var position in _currentPositions)
+                    {
+                        // Check for stop orders
+                        if (position.StopOrderIsActive && position.StopOrderRedLine != 0)
+                        {
+                            string text = "StopAct";
+                            double price = (double)position.StopOrderRedLine;
+                            OxyColor color = position.Direction == Side.Buy ? 
+                                OxyColor.FromArgb(255, 13, 255, 0) : // Green for buy
+                                OxyColor.FromArgb(255, 255, 17, 0);  // Red for sell
+                            
+                            activeStopProfitOrders.Add((text, price, color));
+                        }
+                        
+                        // Check for profit orders
+                        if (position.ProfitOrderIsActive && position.ProfitOrderRedLine != 0)
+                        {
+                            string text = "ProfitAct";
+                            double price = (double)position.ProfitOrderRedLine;
+                            OxyColor color = position.Direction == Side.Buy ? 
+                                OxyColor.FromArgb(255, 255, 17, 0) : // Red for sell (profit from buy position)
+                                OxyColor.FromArgb(255, 13, 255, 0);  // Green for buy (profit from sell position)
+                            
+                            activeStopProfitOrders.Add((text, price, color));
+                        }
+                    }
+                }
+
+                // Update annotations - following the exact same pattern as UpdateLimitOrderAnnotations
+                // Обновляем аннотации - следуем точно тому же паттерну что и UpdateLimitOrderAnnotations
+                for (int i = 0; i < annotation_stop_profit_list.Count; i++)
+                {
+                    if (i < activeStopProfitOrders.Count)
+                    {
+                        // Show annotation for this stop/profit order
+                        // Показываем аннотацию для этого стоп/профит ордера
+                        var orderInfo = activeStopProfitOrders[i];
+                        var annotation = annotation_stop_profit_list[i];
+                        
+                        // Update exactly like UpdateLimitOrderAnnotations does
+                        // Обновляем точно так же как это делает UpdateLimitOrderAnnotations
+                        annotation.TextPosition = new ScreenPoint(plot_view.ActualWidth - plot_model.Padding.Right, 
+                            annotation.GetDataPointPosition(new OxyPlot.DataPoint(DateTimeAxis.ToDouble(DateTime.Now), orderInfo.price)).Y);
+                        annotation.Text = orderInfo.text;
+                        annotation.Background = orderInfo.color;
+                        annotation.Stroke = orderInfo.color;
+                    }
+                    else
+                    {
+                        // Hide this annotation by setting empty text
+                        // Скрываем эту аннотацию, устанавливая пустой текст
+                        annotation_stop_profit_list[i].Text = "";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle any errors silently - following the same pattern as UpdateLimitOrderAnnotations
+                // Обрабатываем ошибки тихо - следуем тому же паттерну что и UpdateLimitOrderAnnotations
             }
         }
 

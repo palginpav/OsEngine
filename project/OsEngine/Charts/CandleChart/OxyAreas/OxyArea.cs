@@ -47,6 +47,10 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
         // List of limit order annotations - following the same pattern as annotation_price
         // Список аннотаций лимитных ордеров - следуем тому же паттерну что и annotation_price
         public List<CustomTextAnnotation> annotation_limit_list = new List<CustomTextAnnotation>();
+        
+        // List of stop/profit activation annotations - following the same pattern as annotation_limit_list
+        // Список аннотаций стоп/профит активации - следуем тому же паттерну что и annotation_limit_list
+        public List<CustomTextAnnotation> annotation_stop_profit_list = new List<CustomTextAnnotation>();
      
         public ScreenPoint mouse_screen_point = new ScreenPoint();
         public System.Windows.Input.MouseEventArgs mouse_event_args;
@@ -235,6 +239,37 @@ namespace OsEngine.Charts.CandleChart.OxyAreas
             foreach (var limitAnnotation in annotation_limit_list)
             {
                 plot_model.Annotations.Add(limitAnnotation);
+            }
+            
+            // Initialize stop/profit activation annotations - following the same pattern as annotation_limit_list
+            // Инициализируем аннотации стоп/профит активации - следуем тому же паттерну что и annotation_limit_list
+            for (int i = 0; i < 10; i++) // Create 10 annotations for potential stop/profit orders
+            {
+                var stopProfitAnnotation = new CustomTextAnnotation()
+                {
+                    Layer = AnnotationLayer.AboveSeries,
+                    ClipByXAxis = false,
+                    ClipByYAxis = false,
+                    Background = OxyColor.Parse("#FF5500"),
+                    TextColor = OxyColors.AliceBlue,
+                    Stroke = OxyColor.Parse("#FF5500"),
+                    TextHorizontalAlignment = HorizontalAlignment.Right,
+                    TextVerticalAlignment = VerticalAlignment.Middle,
+                    Padding = new OxyThickness(2),
+                    EdgeRenderingMode = EdgeRenderingMode.PreferSpeed,
+                    Tag = $"annotation_stop_profit_{i}",
+                    Text = "", // Start with empty text
+                    TextPosition = new ScreenPoint(0, 0) // Will be updated dynamically
+                };
+                
+                annotation_stop_profit_list.Add(stopProfitAnnotation);
+            }
+            
+            // Add all stop/profit activation annotations to the plot model
+            // Добавляем все аннотации стоп/профит активации в модель графика
+            foreach (var stopProfitAnnotation in annotation_stop_profit_list)
+            {
+                plot_model.Annotations.Add(stopProfitAnnotation);
             }
 
 
