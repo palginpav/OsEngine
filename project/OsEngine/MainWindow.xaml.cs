@@ -28,6 +28,9 @@ using System.Net.Sockets;
 using System.Text;
 using OsEngine.OsTrader.Gui.BlockInterface;
 using OsEngine.OsTrader.SystemAnalyze;
+using System.Reflection;
+using System.Linq;
+
 
 namespace OsEngine
 {
@@ -153,6 +156,10 @@ namespace OsEngine
 
             ReloadFlagButton();
 
+            // Wire up the ComboBox event handler
+            // Подключаем обработчик событий ComboBox
+            ModulesComboBox.SelectionChanged += ModulesComboBox_SelectionChanged;
+
             this.ContentRendered += MainWindow_ContentRendered;
         }
 
@@ -163,6 +170,7 @@ namespace OsEngine
             ImageData.Visibility = Visibility.Hidden;
             ImageTests.Visibility = Visibility.Hidden;
             ImageTrading.Visibility = Visibility.Hidden;
+            ImageModules.Visibility = Visibility.Hidden;
             ImageFlag_Ru.Visibility = Visibility.Hidden;
             ImageFlag_Eng.Visibility = Visibility.Hidden;
 
@@ -210,6 +218,7 @@ namespace OsEngine
             ImageData.Visibility = Visibility.Visible;
             ImageTests.Visibility = Visibility.Visible;
             ImageTrading.Visibility = Visibility.Visible;
+            ImageModules.Visibility = Visibility.Visible;
             ImageFlag_Ru.Visibility = Visibility.Visible;
             ImageFlag_Eng.Visibility = Visibility.Visible;
 
@@ -322,6 +331,10 @@ namespace OsEngine
                     // ignore
                 }
             });
+
+            // Populate the modules combo box after UI is fully rendered
+            // Заполняем комбобокс модулей после полной отрисовки UI
+            PopulateModulesComboBox();
         }
 
         private void ChangeText()
@@ -337,6 +350,7 @@ namespace OsEngine
             BlockDataLabel.Content = OsLocalization.MainWindow.BlockDataLabel;
             BlockTestingLabel.Content = OsLocalization.MainWindow.BlockTestingLabel;
             BlockTradingLabel.Content = OsLocalization.MainWindow.BlockTradingLabel;
+            BlockModulesLabel.Content = OsLocalization.MainWindow.BlockModulesLabel;
             ButtonData.Content = OsLocalization.MainWindow.OsDataName;
             ButtonConverter.Content = OsLocalization.MainWindow.OsConverter;
             ButtonTester.Content = OsLocalization.MainWindow.OsTesterName;
@@ -347,6 +361,7 @@ namespace OsEngine
 
             ButtonTesterLight.Content = OsLocalization.MainWindow.OsTesterLightName;
             ButtonRobotLight.Content = OsLocalization.MainWindow.OsBotStationLightName;
+            ModuleLoad.Content = OsLocalization.MainWindow.ModuleLoadButton;
 
            // if(OsLocalization.CurLocalization == OsLocalization.OsLocalType.Ru)
           //  {
@@ -773,6 +788,9 @@ namespace OsEngine
 
         private PrimeSettingsMasterUi _settingsUi;
 
+
+
+
         private void CandleConverter_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -926,6 +944,503 @@ namespace OsEngine
                 ButtonLocal_Eng.Background = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff5500");
             }
         }
+
+        #region Modules ComboBox Management / Управление ComboBox Модулей
+
+        private readonly Dictionary<string, ModuleInfo> _loadedModules = new Dictionary<string, ModuleInfo>();
+        private readonly List<string> _moduleErrors = new List<string>();
+
+        /// <summary>
+        /// Information about a discovered module
+        /// Информация об обнаруженном модуле
+        /// </summary>
+        private class ModuleInfo
+        {
+            public string Name { get; set; }
+            public string ProjectPath { get; set; }
+            public string AssemblyPath { get; set; }
+            public bool IsBuilt { get; set; }
+            public bool IsLoaded { get; set; }
+            public string ErrorMessage { get; set; }
+            public DateTime LastBuildTime { get; set; }
+        }
+
+        /// <summary>
+        /// Populate the ModulesComboBox with available modules from the Modules directory
+        /// Заполняет ModulesComboBox доступными модулями из директории Modules
+        /// </summary>
+        private void PopulateModulesComboBox()
+        {
+            try
+            {
+                if (ModulesComboBox == null)
+                {
+                    return;
+                }
+
+                ModulesComboBox.Items.Clear();
+                _loadedModules.Clear();
+                _moduleErrors.Clear();
+                
+                // Try multiple possible paths for the Modules directory
+                // Пробуем несколько возможных путей для директории Modules
+                string[] possiblePaths = {
+                    // Current directory (when running from project folder)
+                    // Текущая директория (при запуске из папки проекта)
+                    Path.Combine(Directory.GetCurrentDirectory(), "OsEngine", "Modules"),
+                    // Base directory (when running from bin/Debug)
+                    // Базовая директория (при запуске из bin/Debug)
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "OsEngine", "Modules"),
+                    // Relative paths
+                    // Относительные пути
+                    Path.Combine(Directory.GetCurrentDirectory(), "Modules"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Modules"),
+                    "Modules",
+                    Path.Combine(Environment.CurrentDirectory, "Modules"),
+                    // Look for Modules in the project root directory (two levels up from bin\Debug)
+                    // Ищем Modules в корневой директории проекта (на два уровня выше от bin\Debug)
+                    Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "Modules"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Modules")
+                };
+
+                string modulesPath = null;
+                Debug.WriteLine("Trying to find Modules directory...");
+                foreach (string path in possiblePaths)
+                {
+                    Debug.WriteLine($"  Checking path: {path}");
+                    if (Directory.Exists(path))
+                    {
+                        modulesPath = path;
+                        Debug.WriteLine($"Found Modules directory at: {path}");
+                        break;
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Path does not exist: {path}");
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(modulesPath) && Directory.Exists(modulesPath))
+                {
+                    Debug.WriteLine($"Scanning for modules in: {modulesPath}");
+                    
+                    string[] moduleFolders = Directory.GetDirectories(modulesPath);
+                    Debug.WriteLine($"Found {moduleFolders.Length} directories in Modules folder");
+                    
+                    foreach (string folderPath in moduleFolders)
+                    {
+                        string folderName = Path.GetFileName(folderPath);
+                        Debug.WriteLine($"  Examining folder: {folderName} at {folderPath}");
+                        if (!string.IsNullOrEmpty(folderName))
+                        {
+                            var moduleInfo = DiscoverModule(folderPath, folderName);
+                            if (moduleInfo != null)
+                            {
+                                _loadedModules[folderName] = moduleInfo;
+                                ModulesComboBox.Items.Add(folderName);
+                                Debug.WriteLine($"Discovered module: {folderName}");
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"Failed to discover module: {folderName}");
+                            }
+                        }
+                    }
+                }
+                
+                // Set default selection if items exist
+                // Устанавливаем выбор по умолчанию, если есть элементы
+                if (ModulesComboBox.Items.Count > 0)
+                {
+                    ModulesComboBox.SelectedIndex = 0;
+                    Debug.WriteLine($"Found {ModulesComboBox.Items.Count} modules");
+                }
+                else
+                {
+                    Debug.WriteLine("No modules found");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error populating modules: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Discover a module and determine if it's a C# project
+        /// Обнаруживает модуль и определяет, является ли он C# проектом
+        /// </summary>
+        private ModuleInfo DiscoverModule(string folderPath, string folderName)
+        {
+            try
+            {
+                // Look for .csproj files
+                // Ищем файлы .csproj
+                string[] csprojFiles = Directory.GetFiles(folderPath, "*.csproj", SearchOption.TopDirectoryOnly);
+                
+                if (csprojFiles.Length == 0)
+                {
+                    Debug.WriteLine($"{folderName}: No .csproj file found (folder only)");
+                    return new ModuleInfo
+                    {
+                        Name = folderName,
+                        ProjectPath = null,
+                        AssemblyPath = null,
+                        IsBuilt = false,
+                        IsLoaded = false,
+                        ErrorMessage = "No .csproj file found"
+                    };
+                }
+
+                string projectPath = csprojFiles[0];
+                Debug.WriteLine($"{folderName}: Found project file: {Path.GetFileName(projectPath)}");
+
+                // Determine output assembly path
+                // Определяем путь к выходной сборке
+                string assemblyName = Path.GetFileNameWithoutExtension(projectPath);
+                string assemblyPath = Path.Combine(folderPath, "bin", "Debug", "net9.0-windows", $"{assemblyName}.dll");
+                
+                // Check if assembly exists and is built
+                // Проверяем, существует ли сборка и собрана ли она
+                bool isBuilt = File.Exists(assemblyPath);
+                DateTime lastBuildTime = isBuilt ? File.GetLastWriteTime(assemblyPath) : DateTime.MinValue;
+
+                return new ModuleInfo
+                {
+                    Name = folderName,
+                    ProjectPath = projectPath,
+                    AssemblyPath = assemblyPath,
+                    IsBuilt = isBuilt,
+                    IsLoaded = false,
+                    LastBuildTime = lastBuildTime
+                };
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error discovering module {folderName}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Build a specific module
+        /// Собирает конкретный модуль
+        /// </summary>
+        private async Task<bool> BuildModuleAsync(string moduleName)
+        {
+            if (!_loadedModules.ContainsKey(moduleName))
+            {
+                Debug.WriteLine($"Module {moduleName} not found");
+                return false;
+            }
+
+            var moduleInfo = _loadedModules[moduleName];
+            if (string.IsNullOrEmpty(moduleInfo.ProjectPath))
+            {
+                Debug.WriteLine($"{moduleName}: No project file to build");
+                return false;
+            }
+
+            try
+            {
+                Debug.WriteLine($"Building module: {moduleName}...");
+                Debug.WriteLine($"  Project path: {moduleInfo.ProjectPath}");
+                Debug.WriteLine($"  Working directory: {Path.GetDirectoryName(moduleInfo.ProjectPath)}");
+                
+                // Check if dotnet is available
+                // Проверяем, доступен ли dotnet
+                try
+                {
+                    var dotnetCheck = new ProcessStartInfo
+                    {
+                        FileName = "dotnet",
+                        Arguments = "--version",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    };
+                    
+                    using var checkProcess = new Process { StartInfo = dotnetCheck };
+                    checkProcess.Start();
+                    string version = checkProcess.StandardOutput.ReadToEnd().Trim();
+                    checkProcess.WaitForExit();
+                    
+                    Debug.WriteLine($"  .NET SDK version: {version}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"  Warning: Could not check .NET SDK version: {ex.Message}");
+                }
+                
+                // Check current environment
+                // Проверяем текущую среду
+                Debug.WriteLine($"  Current directory: {Directory.GetCurrentDirectory()}");
+                Debug.WriteLine($"  Base directory: {AppDomain.CurrentDomain.BaseDirectory}");
+                Debug.WriteLine($"  Environment current: {Environment.CurrentDirectory}");
+                
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"build \"{moduleInfo.ProjectPath}\" --configuration Debug --verbosity normal",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(moduleInfo.ProjectPath)
+                };
+
+                Debug.WriteLine($"  Command: {startInfo.FileName} {startInfo.Arguments}");
+
+                using var process = new Process { StartInfo = startInfo };
+                var output = new StringBuilder();
+                var error = new StringBuilder();
+
+                process.OutputDataReceived += (sender, e) => { 
+                    if (e.Data != null) 
+                    {
+                        output.AppendLine(e.Data);
+                        Debug.WriteLine($"  [BUILD OUTPUT] {e.Data}");
+                    }
+                };
+                process.ErrorDataReceived += (sender, e) => { 
+                    if (e.Data != null) 
+                    {
+                        error.AppendLine(e.Data);
+                        Debug.WriteLine($"  [BUILD ERROR] {e.Data}");
+                    }
+                };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                
+                await process.WaitForExitAsync();
+
+                Debug.WriteLine($"  Build process exited with code: {process.ExitCode}");
+                Debug.WriteLine($"  Output length: {output.Length}");
+                Debug.WriteLine($"  Error length: {error.Length}");
+
+                if (process.ExitCode == 0)
+                {
+                    // Check if assembly was created
+                    // Проверяем, была ли создана сборка
+                    if (File.Exists(moduleInfo.AssemblyPath))
+                    {
+                        moduleInfo.IsBuilt = true;
+                        moduleInfo.LastBuildTime = File.GetLastWriteTime(moduleInfo.AssemblyPath);
+                        moduleInfo.ErrorMessage = null;
+                        Debug.WriteLine($"{moduleName}: Build successful");
+                        return true;
+                    }
+                    else
+                    {
+                        moduleInfo.ErrorMessage = "Build succeeded but assembly not found";
+                        Debug.WriteLine($"{moduleName}: {moduleInfo.ErrorMessage}");
+                        Debug.WriteLine($"  Expected assembly path: {moduleInfo.AssemblyPath}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    moduleInfo.ErrorMessage = $"Build failed with exit code {process.ExitCode}";
+                    Debug.WriteLine($"{moduleName}: {moduleInfo.ErrorMessage}");
+                    if (output.Length > 0)
+                    {
+                        Debug.WriteLine($"Build output: {output}");
+                    }
+                    if (error.Length > 0)
+                    {
+                        Debug.WriteLine($"Build errors: {error}");
+                    }
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                moduleInfo.ErrorMessage = $"Build exception: {ex.Message}";
+                Debug.WriteLine($"{moduleName}: {moduleInfo.ErrorMessage}");
+                Debug.WriteLine($"  Exception details: {ex}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Load a module's assembly
+        /// Загружает сборку модуля
+        /// </summary>
+        private bool LoadModuleAssembly(string moduleName)
+        {
+            if (!_loadedModules.ContainsKey(moduleName))
+            {
+                Debug.WriteLine($"Module {moduleName} not found");
+                return false;
+            }
+
+            var moduleInfo = _loadedModules[moduleName];
+            if (!moduleInfo.IsBuilt)
+            {
+                Debug.WriteLine($"{moduleName}: Module not built yet");
+                return false;
+            }
+
+            try
+            {
+                Debug.WriteLine($"Loading assembly: {moduleName}...");
+                
+                // Load the assembly
+                // Загружаем сборку
+                var assembly = Assembly.LoadFrom(moduleInfo.AssemblyPath);
+                
+                // Look for module entry points (classes with specific attributes or names)
+                // Ищем точки входа модуля (классы с определенными атрибутами или именами)
+                var moduleTypes = assembly.GetTypes()
+                    .Where(t => t.IsClass && !t.IsAbstract && 
+                               (t.Name.EndsWith("Module") || t.Name.EndsWith("Plugin") || 
+                                t.GetCustomAttributes().Any(a => a.GetType().Name.Contains("Module"))))
+                    .ToList();
+
+                if (moduleTypes.Any())
+                {
+                    Debug.WriteLine($"{moduleName}: Found {moduleTypes.Count} module types");
+                    foreach (var type in moduleTypes)
+                    {
+                        Debug.WriteLine($"  - {type.FullName}");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"{moduleName}: No specific module types found");
+                }
+
+                moduleInfo.IsLoaded = true;
+                Debug.WriteLine($"{moduleName}: Assembly loaded successfully");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                moduleInfo.ErrorMessage = $"Load exception: {ex.Message}";
+                Debug.WriteLine($"{moduleName}: {moduleInfo.ErrorMessage}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Refresh the modules list (can be called when modules are added/removed)
+        /// Обновляет список модулей (можно вызывать при добавлении/удалении модулей)
+        /// </summary>
+        public void RefreshModulesList()
+        {
+            if (ModulesComboBox.Dispatcher.CheckAccess() == false)
+            {
+                ModulesComboBox.Dispatcher.Invoke(new Action(RefreshModulesList));
+                return;
+            }
+            
+            PopulateModulesComboBox();
+        }
+
+        /// <summary>
+        /// Handle module selection change
+        /// Обрабатывает изменение выбора модуля
+        /// </summary>
+        private void ModulesComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ModulesComboBox.SelectedItem != null)
+            {
+                string selectedModule = ModulesComboBox.SelectedItem.ToString();
+                DisplayModuleInfo(selectedModule);
+            }
+        }
+
+        /// <summary>
+        /// Display information about the selected module
+        /// Отображает информацию о выбранном модуле
+        /// </summary>
+        private void DisplayModuleInfo(string moduleName)
+        {
+            if (!_loadedModules.ContainsKey(moduleName))
+            {
+                Debug.WriteLine($"Module {moduleName} not found");
+                return;
+            }
+
+            var moduleInfo = _loadedModules[moduleName];
+            Debug.WriteLine($"Module Info: {moduleName}");
+            Debug.WriteLine($"  Project: {moduleInfo.ProjectPath ?? "None"}");
+            Debug.WriteLine($"  Assembly: {moduleInfo.AssemblyPath ?? "None"}");
+            Debug.WriteLine($"  Built: {moduleInfo.IsBuilt}");
+            Debug.WriteLine($"  Loaded: {moduleInfo.IsLoaded}");
+            Debug.WriteLine($"  Last Build: {moduleInfo.LastBuildTime:yyyy-MM-dd HH:mm:ss}");
+            
+            if (!string.IsNullOrEmpty(moduleInfo.ErrorMessage))
+            {
+                Debug.WriteLine($"  Error: {moduleInfo.ErrorMessage}");
+            }
+        }
+
+        /// <summary>
+        /// Handle module load button click
+        /// Обрабатывает нажатие кнопки загрузки модуля
+        /// </summary>
+        private async void ModuleLoad_Click(object sender, RoutedEventArgs e)
+        {
+            if (ModulesComboBox.SelectedItem == null)
+            {
+                MessageBox.Show("Please select a module first.", "No Module Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            string selectedModule = ModulesComboBox.SelectedItem.ToString();
+            await LoadSelectedModuleAsync(selectedModule);
+        }
+
+        /// <summary>
+        /// Load the selected module based on its name
+        /// Загружает выбранный модуль по его имени
+        /// </summary>
+        private async Task LoadSelectedModuleAsync(string moduleName)
+        {
+            try
+            {
+                Debug.WriteLine($"Loading module: {moduleName}...");
+                
+                // Step 1: Build the module if needed
+                // Шаг 1: Собираем модуль, если нужно
+                if (!_loadedModules[moduleName].IsBuilt)
+                {
+                    Debug.WriteLine($"Building {moduleName}...");
+                    bool buildSuccess = await BuildModuleAsync(moduleName);
+                    if (!buildSuccess)
+                    {
+                        Debug.WriteLine($"Failed to build {moduleName}");
+                        return;
+                    }
+                }
+
+                // Step 2: Load the assembly
+                // Шаг 2: Загружаем сборку
+                bool loadSuccess = LoadModuleAssembly(moduleName);
+                if (loadSuccess)
+                {
+                    Debug.WriteLine($"Module {moduleName} loaded successfully!");
+                    MessageBox.Show($"Module '{moduleName}' has been loaded successfully!", "Module Loaded", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    Debug.WriteLine($"Failed to load {moduleName}");
+                    MessageBox.Show($"Failed to load module '{moduleName}'. Check the console for details.", "Load Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading module '{moduleName}': {ex.Message}");
+                MessageBox.Show($"Error loading module '{moduleName}': {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+
+
+        #endregion
     }
 
 

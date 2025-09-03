@@ -22,7 +22,15 @@ namespace OsEngine.Language
 
         public string BlockTradingLabel => OsLocalization.ConvertToLocString(
             "Eng:Trading_"+
-            "Ru:Торговля");
+            "Ru:Торговля_");
+
+        public string BlockModulesLabel => OsLocalization.ConvertToLocString(
+            "Eng:Modules_"+
+            "Ru:Модули");
+
+        public string ModuleLoadButton => OsLocalization.ConvertToLocString(
+            "Eng:Load_"+
+            "Ru:Загрузить");
 
         public string OsDataName => OsLocalization.ConvertToLocString(
             "Eng:Data_"+
