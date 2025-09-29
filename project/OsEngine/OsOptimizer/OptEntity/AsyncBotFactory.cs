@@ -10,6 +10,7 @@ using OsEngine.OsTrader.Panels;
 using OsEngine.Robots;
 using System;
 using OsEngine.Logging;
+using OsEngine.Performance;
 
 namespace OsEngine.OsOptimizer.OptimizerEntity
 {
@@ -23,7 +24,7 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
             
             for (int i = 0; i < optimalThreadCount; i++)
             {
-                _botsToStart.Add(new List<string>());
+                _botsToStart.Add(CollectionOptimizer.CreateListWithCapacity<string>(16));
                 Thread worker = new Thread(WorkerArea);
                 worker.Name = i.ToString();
                 worker.IsBackground = true; // Mark as background thread

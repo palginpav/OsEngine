@@ -16,6 +16,7 @@ using OsEngine.Entity;
 using OsEngine.Language;
 using OsEngine.Logging;
 using System.Globalization;
+using OsEngine.Performance;
 
 namespace OsEngine.Journal.Internal
 {
@@ -447,7 +448,7 @@ namespace OsEngine.Journal.Internal
             {
                 if (_deals == null)
                 {
-                    _deals = new List<Position>();
+                    _deals = CollectionOptimizer.CreateListWithCapacity<Position>(100); // Pre-allocate for typical position count
                     _deals.Add(newPosition);
                 }
                 else
@@ -455,12 +456,12 @@ namespace OsEngine.Journal.Internal
                     _deals.Add(newPosition);
                 }
 
-                for (int i = 0; i < _deals.Count; i++)
+                // Optimize null removal - use reverse iteration to avoid index shifting
+                for (int i = _deals.Count - 1; i >= 0; i--)
                 {
                     if (_deals[i] == null)
                     {
                         _deals.RemoveAt(i);
-                        i--;
                     }
                 }
             }

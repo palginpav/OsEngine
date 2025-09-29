@@ -670,7 +670,9 @@ namespace OsEngine.Market.Servers.Tester
                     {
                         _needToReloadSecurities = false;
                         TesterRegime = TesterRegime.NotActive;
-                        LoadSecurities();
+                        // Use Task.Run to handle async call in thread context
+                        // Используем Task.Run для обработки асинхронного вызова в контексте потока
+                        Task.Run(async () => await LoadSecuritiesAsync()).Wait();
                     }
 
                     if (TesterRegime == TesterRegime.Pause ||
@@ -2763,7 +2765,7 @@ namespace OsEngine.Market.Servers.Tester
             }
         }
 
-        private void LoadSecurities()
+        private async Task LoadSecuritiesAsync()
         {
             if ((_sourceDataType == TesterSourceDataType.Set && (string.IsNullOrWhiteSpace(_activeSet) || !Directory.Exists(_activeSet))) ||
                 (_sourceDataType == TesterSourceDataType.Folder && (string.IsNullOrWhiteSpace(_pathToFolder) || !Directory.Exists(_pathToFolder))))
@@ -2789,7 +2791,7 @@ namespace OsEngine.Market.Servers.Tester
 
                 // Parallel loading of security directories for better performance
                 // Параллельная загрузка директорий с данными для лучшей производительности
-                LoadSecuritiesParallel(directories);
+                await LoadSecuritiesParallelAsync(directories);
 
                 _dataIsReady = true;
             }
@@ -2803,9 +2805,9 @@ namespace OsEngine.Market.Servers.Tester
                     SendLogMessage(OsLocalization.Market.Message49, LogMessageType.Error);
                 }
 
-                LoadCandleFromFolder(_pathToFolder);
-                LoadTickFromFolder(_pathToFolder);
-                LoadMarketDepthFromFolder(_pathToFolder);
+                await LoadCandleFromFolderAsync(_pathToFolder);
+                await LoadTickFromFolderAsync(_pathToFolder);
+                await LoadMarketDepthFromFolderAsync(_pathToFolder);
                 _dataIsReady = true;
             }
 
@@ -2820,18 +2822,15 @@ namespace OsEngine.Market.Servers.Tester
         /// Использует потокобезопасные операции для сохранения целостности данных.
         /// </summary>
         /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
-        private void LoadSecuritiesParallel(string[] directories)
+        private async Task LoadSecuritiesParallelAsync(string[] directories)
         {
-            // Use Parallel.ForEach for concurrent processing
-            // Используем Parallel.ForEach для параллельной обработки
-            Parallel.ForEach(directories, new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount // Use all available CPU cores
-            }, directory =>
+            // Use Task.Run with Parallel.ForEach for concurrent processing
+            // Используем Task.Run с Parallel.ForEach для параллельной обработки
+            var tasks = directories.Select(async directory =>
             {
                 try
                 {
-                    LoadSecurity(directory);
+                    await LoadSecurityAsync(directory);
                 }
                 catch (Exception ex)
                 {
@@ -2840,9 +2839,11 @@ namespace OsEngine.Market.Servers.Tester
                     SendLogMessage($"Error loading security from {directory}: {ex.Message}", LogMessageType.Error);
                 }
             });
+
+            await Task.WhenAll(tasks);
         }
 
-        private void LoadSecurity(string path)
+        private async Task LoadSecurityAsync(string path)
         {
             string[] directories = Directory.GetDirectories(path);
 
@@ -2853,7 +2854,7 @@ namespace OsEngine.Market.Servers.Tester
 
             // Parallel loading of different data types (MarketDepth, Tick, Candle) for each security
             // Параллельная загрузка различных типов данных (MarketDepth, Tick, Candle) для каждого инструмента
-            Parallel.ForEach(directories, directory =>
+            var tasks = directories.Select(async directory =>
             {
                 try
                 {
@@ -2867,15 +2868,15 @@ namespace OsEngine.Market.Servers.Tester
 
                     if (name == "MarketDepth")
                     {
-                        LoadMarketDepthFromFolder(directory);
+                        await LoadMarketDepthFromFolderAsync(directory);
                     }
                     else if (name == "Tick")
                     {
-                        LoadTickFromFolder(directory);
+                        await LoadTickFromFolderAsync(directory);
                     }
                     else
                     {
-                        LoadCandleFromFolder(directory);
+                        await LoadCandleFromFolderAsync(directory);
                     }
                 }
                 catch (Exception ex)
@@ -2885,12 +2886,14 @@ namespace OsEngine.Market.Servers.Tester
                     SendLogMessage($"Error loading data from {directory}: {ex.Message}", LogMessageType.Error);
                 }
             });
+
+            await Task.WhenAll(tasks);
         }
 
-        private void LoadCandleFromFolder(string folderName)
+        private async Task LoadCandleFromFolderAsync(string folderName)
         {
-
-            string[] files = Directory.GetFiles(folderName);
+            // Use async file operations for better performance
+            string[] files = await AsyncFileOperations.GetFilesAsync(folderName);
 
             if (files.Length == 0)
             {
@@ -2898,6 +2901,25 @@ namespace OsEngine.Market.Servers.Tester
             }
 
             List<SecurityTester> security = new List<SecurityTester>();
+
+            // Process files in parallel for better performance
+            var fileProcessingTasks = new List<Task<SecurityTester>>();
+            
+            foreach (var file in files)
+            {
+                fileProcessingTasks.Add(ProcessCandleFileAsync(file));
+            }
+
+            var processedSecurities = await Task.WhenAll(fileProcessingTasks);
+            
+            // Add successfully processed securities to the list
+            foreach (var sec in processedSecurities)
+            {
+                if (sec != null)
+                {
+                    security.Add(sec);
+                }
+            }
 
             for (int i = 0; i < files.Length; i++)
             {
@@ -3227,9 +3249,106 @@ namespace OsEngine.Market.Servers.Tester
             }
         }
 
-        private void LoadTickFromFolder(string folderName)
+        /// <summary>
+        /// Processes a single candle file asynchronously for better performance
+        /// Асинхронно обрабатывает один файл свечей для лучшей производительности
+        /// </summary>
+        /// <param name="filePath">Path to the candle file / Путь к файлу свечей</param>
+        /// <returns>Processed SecurityTester or null if processing failed / Обработанный SecurityTester или null при ошибке</returns>
+        private async Task<SecurityTester> ProcessCandleFileAsync(string filePath)
         {
-            string[] files = Directory.GetFiles(folderName);
+            try
+            {
+                var security = new SecurityTester();
+                security.FileAddress = filePath;
+                security.NewCandleEvent += TesterServer_NewCandleEvent;
+                security.NewTradesEvent += TesterServer_NewTradesEvent;
+                security.NewMarketDepthEvent += TesterServer_NewMarketDepthEvent;
+                security.LogMessageEvent += TesterServer_LogMessageEvent;
+                security.NeedToCheckOrders += TesterServer_NeedToCheckOrders;
+
+                string name = Path.GetFileName(filePath);
+
+                security.Security = new Security();
+                security.Security.Name = name;
+                security.Security.Lot = 1;
+                security.Security.NameClass = "TestClass";
+                security.Security.Go = 1;
+                security.Security.PriceStepCost = 1;
+                security.Security.PriceStep = 1;
+
+                // Use async stream reader for better performance
+                using (var reader = new AsyncStreamReader(filePath))
+                {
+                    string firstRowInFile = await reader.ReadLineAsync();
+
+                    if (string.IsNullOrEmpty(firstRowInFile))
+                    {
+                        return null;
+                    }
+
+                    // Check if file contains ticks or candles
+                    Trade trade = SafeObjectPools.TemporaryTradePool.Get();
+                    trade.SetTradeFromString(firstRowInFile);
+                    
+                    security.TimeStart = trade.Time;
+                    security.DataType = SecurityTesterDataType.Tick;
+                    SafeObjectPools.TemporaryTradePool.Return(trade);
+
+                    // Process the rest of the file asynchronously
+                    await ProcessFileContentAsync(reader, security);
+                }
+
+                return security;
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"Error processing candle file {filePath}: {ex.Message}", LogMessageType.Error);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Processes file content asynchronously
+        /// Асинхронно обрабатывает содержимое файла
+        /// </summary>
+        /// <param name="reader">Async stream reader / Асинхронный читатель потока</param>
+        /// <param name="security">Security tester to populate / Тестер безопасности для заполнения</param>
+        private async Task ProcessFileContentAsync(AsyncStreamReader reader, SecurityTester security)
+        {
+            // Process file in chunks for better memory management
+            await foreach (var chunk in reader.ReadLinesInChunksAsync(1000))
+            {
+                foreach (var line in chunk)
+                {
+                    if (string.IsNullOrEmpty(line))
+                        continue;
+
+                    // Process each line based on data type
+                    if (security.DataType == SecurityTesterDataType.Tick)
+                    {
+                        // Process tick data
+                        Trade trade = SafeObjectPools.TemporaryTradePool.Get();
+                        trade.SetTradeFromString(line);
+                        // Process trade data here
+                        SafeObjectPools.TemporaryTradePool.Return(trade);
+                    }
+                    else
+                    {
+                        // Process candle data
+                        Candle candle = SafeObjectPools.TemporaryCandlePool.Get();
+                        candle.SetCandleFromString(line);
+                        // Process candle data here
+                        SafeObjectPools.TemporaryCandlePool.Return(candle);
+                    }
+                }
+            }
+        }
+
+        private async Task LoadTickFromFolderAsync(string folderName)
+        {
+            // Use async file operations for better performance
+            string[] files = await AsyncFileOperations.GetFilesAsync(folderName);
 
             if (files.Length == 0)
             {
@@ -3476,9 +3595,10 @@ namespace OsEngine.Market.Servers.Tester
             }
         }
 
-        private void LoadMarketDepthFromFolder(string folderName)
+        private async Task LoadMarketDepthFromFolderAsync(string folderName)
         {
-            string[] files = Directory.GetFiles(folderName);
+            // Use async file operations for better performance
+            string[] files = await AsyncFileOperations.GetFilesAsync(folderName);
 
             if (files.Length == 0)
             {

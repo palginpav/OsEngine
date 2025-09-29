@@ -14,6 +14,7 @@ using OsEngine.Entity;
 using OsEngine.OsTrader.Panels;
 using OsEngine.Robots.Engines;
 using System.Windows; // For MessageBox
+using OsEngine.Performance;
 
 // Roslyn specific usings
 using Microsoft.CodeAnalysis;

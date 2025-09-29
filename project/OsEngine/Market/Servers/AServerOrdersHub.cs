@@ -8,9 +8,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using LiteDB;
 using OsEngine.Entity;
 using OsEngine.Logging;
+using OsEngine.Performance;
 using System.Linq;
 
 namespace OsEngine.Market.Servers
@@ -438,49 +440,91 @@ namespace OsEngine.Market.Servers
 
                 dir += _server.ServerNameUnique + "_active_orders.db";
 
-                using (LiteDatabase db = new LiteDatabase(dir))
+                // Use optimized database operations for better performance
+                // Используем оптимизированные операции с базой данных для лучшей производительности
+                LoadOrdersFromFileOptimized(dir);
+            }
+            catch (Exception e)
+            {
+                SendLogMessage(e.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Optimized version of LoadOrdersFromFile using DatabaseOptimizer
+        /// Оптимизированная версия LoadOrdersFromFile с использованием DatabaseOptimizer
+        /// </summary>
+        /// <param name="databasePath">Path to the database file / Путь к файлу базы данных</param>
+        private void LoadOrdersFromFileOptimized(string databasePath)
+        {
+            try
+            {
+                // Use optimized query with pagination for better memory management
+                // Используем оптимизированный запрос с пагинацией для лучшего управления памятью
+                Task.Run(async () =>
                 {
-                    var collection = db.GetCollection<OrderToSave>("orders");
-
-                    List<OrderToSave> col = collection.FindAll().ToList();
-
-                    for (int i = 0; i < col.Count; i++)
+                    try
                     {
-                        OrderToSave curOrdInBd = col[i];
+                        var ordersToSave = await DatabaseOptimizer.QueryWithPaginationAsync<OrderToSave>(
+                            databasePath, 
+                            "orders", 
+                            null, // Query.All() equivalent
+                            0,    // skip
+                            10000 // take - reasonable limit for orders
+                        );
 
-                        string orderInString = curOrdInBd.SaveString;
-
-                        if (string.IsNullOrEmpty(orderInString) == false)
+                        // Process orders in batches to avoid blocking the UI thread
+                        // Обрабатываем ордера пакетами, чтобы не блокировать UI поток
+                        var batches = ordersToSave.Batch(100);
+                        
+                        foreach (var batch in batches)
                         {
-                            Order newOrder = new Order();
-                            newOrder.SetOrderFromString(orderInString);
-
-                            if (newOrder.State == OrderStateType.Fail
-                                || newOrder.State == OrderStateType.Cancel
-                                || newOrder.State == OrderStateType.Done)
+                            foreach (var curOrdInBd in batch)
                             {
-                                if (_fullLogIsOn)
+                                string orderInString = curOrdInBd.SaveString;
+
+                                if (string.IsNullOrEmpty(orderInString) == false)
                                 {
-                                    SendLogMessage("Bad State order LOAD. Ignore. NumUser: " + newOrder.NumberUser
-                                        + " NumMarket: " + newOrder.NumberMarket
-                                        + " Status: " + newOrder.State, LogMessageType.System);
+                                    Order newOrder = new Order();
+                                    newOrder.SetOrderFromString(orderInString);
+
+                                    if (newOrder.State == OrderStateType.Fail
+                                        || newOrder.State == OrderStateType.Cancel
+                                        || newOrder.State == OrderStateType.Done)
+                                    {
+                                        if (_fullLogIsOn)
+                                        {
+                                            SendLogMessage("Bad State order LOAD. Ignore. NumUser: " + newOrder.NumberUser
+                                                + " NumMarket: " + newOrder.NumberMarket
+                                                + " Status: " + newOrder.State, LogMessageType.System);
+                                        }
+                                        continue;
+                                    }
+                                    
+                                    OrderToWatch orderToWatch = new OrderToWatch();
+                                    orderToWatch.Order = newOrder;
+
+                                    _ordersActive.Add(orderToWatch);
+
+                                    if (_fullLogIsOn)
+                                    {
+                                        SendLogMessage("New alive order LOAD. NumUser: " + newOrder.NumberUser
+                                            + " NumMarket: " + newOrder.NumberMarket
+                                            + " Status: " + newOrder.State, LogMessageType.System);
+                                    }
                                 }
-                                continue;
                             }
-                            OrderToWatch orderToWatch = new OrderToWatch();
-                            orderToWatch.Order = newOrder;
-
-                            _ordersActive.Add(orderToWatch);
-
-                            if (_fullLogIsOn)
-                            {
-                                SendLogMessage("New alive order LOAD. NumUser: " + newOrder.NumberUser
-                                    + " NumMarket: " + newOrder.NumberMarket
-                                    + " Status: " + newOrder.State, LogMessageType.System);
-                            }
+                            
+                            // Small delay between batches to prevent UI blocking
+                            // Небольшая задержка между пакетами для предотвращения блокировки UI
+                            await Task.Delay(10);
                         }
                     }
-                }
+                    catch (Exception ex)
+                    {
+                        SendLogMessage($"Error in optimized order load: {ex.Message}", LogMessageType.Error);
+                    }
+                });
             }
             catch (Exception e)
             {
@@ -502,102 +546,71 @@ namespace OsEngine.Market.Servers
 
                 dir += _server.ServerNameUnique + "_active_orders.db";
 
-                using (LiteDatabase db = new LiteDatabase(dir))
+                // Use optimized database operations for better performance
+                // Используем оптимизированные операции с базой данных для лучшей производительности
+                SaveOrdersInFileOptimized(dir);
+            }
+            catch (Exception e)
+            {
+                SendLogMessage(e.ToString(), LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
+        /// Optimized version of SaveOrdersInFile using DatabaseOptimizer
+        /// Оптимизированная версия SaveOrdersInFile с использованием DatabaseOptimizer
+        /// </summary>
+        /// <param name="databasePath">Path to the database file / Путь к файлу базы данных</param>
+        private void SaveOrdersInFileOptimized(string databasePath)
+        {
+            try
+            {
+                // Convert active orders to OrderToSave objects
+                // Преобразуем активные ордера в объекты OrderToSave
+                var ordersToSave = new List<OrderToSave>();
+                
+                for (int i = 0; i < _ordersActive.Count; i++)
                 {
-                    var collection = db.GetCollection<OrderToSave>("orders");
-
-                    List<OrderToSave> col = collection.FindAll().ToList();
-
-                    // 1 вставляем в базу ордера которые сейчас есть в массиве активных ордеров
-
-                    for (int i = 0; i < _ordersActive.Count; i++)
+                    var orderToSave = new OrderToSave
                     {
-                        OrderToSave orderToSave = new OrderToSave();
-                        orderToSave.NumberId = i;
-                        orderToSave.NumberMarket = _ordersActive[i].Order.NumberMarket;
-                        orderToSave.NumberUser = _ordersActive[i].Order.NumberUser;
-                        orderToSave.SaveString = _ordersActive[i].Order.GetStringForSave().ToString();
-
-                        bool isInArray = false;
-
-                        for (int j = 0; j < col.Count; j++)
-                        {
-                            OrderToSave curOrd = col[j];
-
-                            if (curOrd.NumberUser != 0 &&
-                                orderToSave.NumberUser != 0
-                                && curOrd.NumberUser == orderToSave.NumberUser)
-                            {
-                                col[j] = orderToSave;
-                                isInArray = true;
-                                break;
-                            }
-
-                            if (string.IsNullOrEmpty(curOrd.NumberMarket) == false
-                                && string.IsNullOrEmpty(orderToSave.NumberMarket) == false
-                                && curOrd.NumberMarket == orderToSave.NumberMarket)
-                            {
-                                col[j] = orderToSave;
-                                isInArray = true;
-                                break;
-                            }
-                        }
-
-                        if (isInArray == false)
-                        {
-                            col.Add(orderToSave);
-                        }
-                    }
-
-                    // 2 удаляем лишние ордера из базы
-
-                    for (int i = 0; i < col.Count; i++)
-                    {
-                        OrderToSave curOrdInBd = col[i];
-
-                        bool isInArray = false;
-
-                        for (int j = 0; j < _ordersActive.Count; j++)
-                        {
-                            OrderToWatch order = _ordersActive[j];
-
-                            if (order.Order.NumberUser != 0 &&
-                                curOrdInBd.NumberUser != 0 &&
-                                order.Order.NumberUser == curOrdInBd.NumberUser)
-                            {
-                                isInArray = true;
-                                break;
-                            }
-                            if (string.IsNullOrEmpty(order.Order.NumberMarket) == false &&
-                                string.IsNullOrEmpty(curOrdInBd.NumberMarket) == false &&
-                                order.Order.NumberMarket == curOrdInBd.NumberMarket)
-                            {
-                                isInArray = true;
-                                break;
-                            }
-                        }
-
-                        if (isInArray == false)
-                        {
-                            col.RemoveAt(i);
-                            i--;
-                        }
-                    }
-
-                    collection.DeleteAll();
-
-                    for (int i = 0; i < col.Count; i++)
-                    {
-                        collection.Insert(i, col[i]);
-                    }
-
-                    if (col.Count > 0)
-                    {
-                        collection.EnsureIndex(x => x.NumberId);
-                    }
-
-                    db.Commit();
+                        NumberId = i,
+                        NumberMarket = _ordersActive[i].Order.NumberMarket,
+                        NumberUser = _ordersActive[i].Order.NumberUser,
+                        SaveString = _ordersActive[i].Order.GetStringForSave().ToString()
+                    };
+                    ordersToSave.Add(orderToSave);
                 }
+
+                // Use optimized bulk upsert operation
+                // Используем оптимизированную операцию массового upsert
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        // First, clear the collection for a clean state
+                        // Сначала очищаем коллекцию для чистого состояния
+                        await DatabaseOptimizer.DeleteBatchAsync(
+                            databasePath, 
+                            "orders", 
+                            Query.All()
+                        );
+
+                        // Then bulk insert all current orders
+                        // Затем массово вставляем все текущие ордера
+                        if (ordersToSave.Count > 0)
+                        {
+                            await DatabaseOptimizer.BulkInsertAsync(
+                                databasePath, 
+                                "orders", 
+                                ordersToSave
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        SendLogMessage($"Error in optimized order save: {ex.Message}", LogMessageType.Error);
+                    }
+                });
             }
             catch (Exception e)
             {

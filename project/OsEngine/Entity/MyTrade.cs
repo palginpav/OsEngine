@@ -5,6 +5,7 @@
 
 using System;
 using System.Globalization;
+using OsEngine.Performance;
 
 namespace OsEngine.Entity
 {
@@ -65,18 +66,17 @@ namespace OsEngine.Entity
         /// </summary>
         public string GetStringFofSave()
         {
-            string result = "";
-
-            result += Volume.ToString(CultureInfo) + "&";
-            result += Price.ToString(CultureInfo) + "&";
-            result += NumberOrderParent.ToString(CultureInfo) + "&";
-            result += Time.ToString(CultureInfo) + "&";
-            result += NumberTrade.ToString(CultureInfo) + "&";
-            result += Side + "&";
-            result += SecurityNameCode.Replace("@","%") + "&";
-            result += NumberPosition + "&";
-
-            return result;
+            // Use optimized string concatenation to reduce allocations
+            return MemoryOptimizer.ConcatStrings(
+                Volume.ToString(CultureInfo), "&",
+                Price.ToString(CultureInfo), "&",
+                NumberOrderParent?.ToString(CultureInfo) ?? "", "&",
+                Time.ToString(CultureInfo), "&",
+                NumberTrade?.ToString(CultureInfo) ?? "", "&",
+                Side.ToString(), "&",
+                SecurityNameCode?.Replace("@", "%") ?? "", "&",
+                NumberPosition ?? "", "&"
+            );
         }
 
         /// <summary>

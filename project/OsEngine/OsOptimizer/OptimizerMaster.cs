@@ -20,6 +20,7 @@ using System.Threading;
 using System.Globalization;
 using OsEngine.OsTrader.Panels.Tab;
 using OsEngine.Market;
+using OsEngine.Performance;
 
 namespace OsEngine.OsOptimizer
 {
@@ -39,6 +40,10 @@ namespace OsEngine.OsOptimizer
             
             // Log thread configuration for performance monitoring
             SendLogMessage($"Optimizer thread configuration: {_threadsCount} threads (CPU cores: {Environment.ProcessorCount})", LogMessageType.System);
+            
+            // Log memory optimization configuration
+            var (sbCount, listCount, dictCount) = MemoryOptimizer.GetPoolStats();
+            SendLogMessage($"Memory optimization pools initialized: StringBuilder={sbCount}, List={listCount}, Dictionary={dictCount}", LogMessageType.System);
 
             Storage = new OptimizerDataStorage("Prime", true);
             Storage.SecuritiesChangeEvent += _storage_SecuritiesChangeEvent;

@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using OsEngine.Performance;
 using OsEngine.Market;
 using OsEngine.Market.Servers.Tester;
 
@@ -432,7 +433,8 @@ namespace OsEngine.Entity
                 return _saveString;
             }
 
-            StringBuilder result = new StringBuilder();
+            // Use pooled StringBuilder to reduce allocations
+            StringBuilder result = MemoryOptimizer.GetStringBuilder();
 
             result.Append(NumberUser + "@");
 

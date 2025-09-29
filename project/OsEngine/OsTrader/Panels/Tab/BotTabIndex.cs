@@ -10,6 +10,7 @@ using OsEngine.Language;
 using OsEngine.Logging;
 using OsEngine.Market;
 using OsEngine.Market.Connectors;
+using OsEngine.Performance;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -2114,7 +2115,8 @@ namespace OsEngine.OsTrader.Panels.Tab
 
                 for (int i = startIndex; i < candles.Count; i++)
                 {
-                    Candle newCandle = new Candle();
+                    // Use object pooling for temporary candle objects during calculation
+                    Candle newCandle = SafeObjectPools.TemporaryCandlePool.Get();
                     newCandle.TimeStart = candles[i].TimeStart;
                     newCandle.State = candles[i].State;
                     newCandle.Volume = candles[i].Volume;
