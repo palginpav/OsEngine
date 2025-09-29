@@ -32,8 +32,13 @@ namespace OsEngine.OsOptimizer
             _log = new Log("OptimizerLog", StartProgram.IsTester);
             _log.Listen(this);
 
-            _threadsCount = 1;
+            // Dynamic default thread count based on processor count
+            _threadsCount = Math.Min(Environment.ProcessorCount, 8); // Cap at 8 for optimization
+            if (_threadsCount <= 0) _threadsCount = 2; // Minimum of 2 threads
             _startDeposit = 100000;
+            
+            // Log thread configuration for performance monitoring
+            SendLogMessage($"Optimizer thread configuration: {_threadsCount} threads (CPU cores: {Environment.ProcessorCount})", LogMessageType.System);
 
             Storage = new OptimizerDataStorage("Prime", true);
             Storage.SecuritiesChangeEvent += _storage_SecuritiesChangeEvent;

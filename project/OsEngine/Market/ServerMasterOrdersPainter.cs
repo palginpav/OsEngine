@@ -72,6 +72,11 @@ namespace OsEngine.Market
 
             List<IServer> servers = ServerMaster.GetServers();
 
+            if (servers == null)
+            {
+                return;
+            }
+
             for (int i = 0; i < servers.Count; i++)
             {
                 try
@@ -1099,12 +1104,14 @@ namespace OsEngine.Market
 
                                     if (string.IsNullOrEmpty(order.ServerName) == false)
                                     {
-                                        server = ServerMaster.GetServers().Find(server1 =>
+                                        var serversList = ServerMaster.GetServers();
+                                        server = serversList?.Find(server1 =>
                                         server1.ServerNameAndPrefix == order.ServerName);
                                     }
                                     else
                                     {
-                                        server = ServerMaster.GetServers().Find(server1 =>
+                                        var serversList = ServerMaster.GetServers();
+                                        server = serversList?.Find(server1 =>
                                         server1.ServerType == order.ServerType);
                                     }
 
@@ -1205,12 +1212,14 @@ namespace OsEngine.Market
 
                             if(string.IsNullOrEmpty(order.ServerName) == false)
                             {
-                                server = ServerMaster.GetServers().Find(server1 => 
+                                var serversList = ServerMaster.GetServers();
+                                server = serversList?.Find(server1 => 
                                 server1.ServerNameAndPrefix == order.ServerName);
                             }
                             else
                             {
-                                server = ServerMaster.GetServers().Find(server1 => 
+                                var serversList = ServerMaster.GetServers();
+                                server = serversList?.Find(server1 => 
                                 server1.ServerType == order.ServerType);
                             }
 

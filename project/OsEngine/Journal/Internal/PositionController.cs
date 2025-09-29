@@ -274,7 +274,10 @@ namespace OsEngine.Journal.Internal
                     ProcessPosition(deals[i]);
                 }
 
-                _openPositions = new List<Position>();
+                lock (_positionsLocker)
+                {
+                    _openPositions = new List<Position>();
+                }
                 _openLongChanged = true;
                 _openShortChanged = true;
                 _closePositionChanged = true;
@@ -425,6 +428,7 @@ namespace OsEngine.Journal.Internal
         private List<Position> _deals;
 
         private string _dealsLocker = "_dealsLocker";
+        private string _positionsLocker = "_positionsLocker";
 
         public void SetNewPosition(Position newPosition)
         {
@@ -459,7 +463,10 @@ namespace OsEngine.Journal.Internal
                         i--;
                     }
                 }
+            }
 
+            lock (_positionsLocker)
+            {
                 _openPositions.Add(newPosition);
             }
 
@@ -502,9 +509,11 @@ namespace OsEngine.Journal.Internal
                         break;
                     }
                 }
+            }
 
-                // убираем в хранилищах открытых позиций
-
+            // убираем в хранилищах открытых позиций
+            lock (_positionsLocker)
+            {
                 for (int i = 0; i < _openPositions.Count; i++)
                 {
                     if (_openPositions[i].Number == position.Number)
@@ -791,36 +800,39 @@ namespace OsEngine.Journal.Internal
                 return;
             }
 
-            List<Position> positions = OpenPositions;
-
-            if (positions == null ||
-                positions.Count == 0)
+            lock (_positionsLocker)
             {
-                return;
-            }
+                List<Position> positions = OpenPositions;
 
-            if (_startProgram != StartProgram.IsOsOptimizer)
-            {
-                for (int i = positions.Count - 1; i > -1; i--)
+                if (positions == null ||
+                    positions.Count == 0)
                 {
-                    Position pos = positions[i];
+                    return;
+                }
 
-                    if(pos == null)
+                if (_startProgram != StartProgram.IsOsOptimizer)
+                {
+                    for (int i = positions.Count - 1; i > -1; i--)
                     {
-                        continue;
-                    }
+                        Position pos = positions[i];
 
-                    if (pos.State == PositionStateType.Open
-                        || pos.State == PositionStateType.Closing
-                        || pos.State == PositionStateType.ClosingFail)
-                    {
-                        decimal profitOld = pos.ProfitOperationAbs;
-
-                        pos.SetBidAsk(bid, ask);
-
-                        if (profitOld != pos.ProfitOperationAbs)
+                        if(pos == null)
                         {
-                            ProcessPosition(pos);
+                            continue;
+                        }
+
+                        if (pos.State == PositionStateType.Open
+                            || pos.State == PositionStateType.Closing
+                            || pos.State == PositionStateType.ClosingFail)
+                        {
+                            decimal profitOld = pos.ProfitOperationAbs;
+
+                            pos.SetBidAsk(bid, ask);
+
+                            if (profitOld != pos.ProfitOperationAbs)
+                            {
+                                ProcessPosition(pos);
+                            }
                         }
                     }
                 }
@@ -990,29 +1002,32 @@ namespace OsEngine.Journal.Internal
 
         private void UpdateOpenPositionArray(Position position, bool checkNum = true)
         {
-            if (position.State != PositionStateType.Done && position.State != PositionStateType.OpeningFail)
+            lock (_positionsLocker)
             {
-                // then the open position
-                // это открытая позиция
-                if (checkNum == true)
+                if (position.State != PositionStateType.Done && position.State != PositionStateType.OpeningFail)
                 {
-                    if (_openPositions.Find(pos => pos != null && pos.Number == position.Number) == null)
+                    // then the open position
+                    // это открытая позиция
+                    if (checkNum == true)
+                    {
+                        if (_openPositions.Find(pos => pos != null && pos.Number == position.Number) == null)
+                        {
+                            _openPositions.Add(position);
+                        }
+                    }
+                    else
                     {
                         _openPositions.Add(position);
                     }
                 }
                 else
                 {
-                    _openPositions.Add(position);
-                }
-            }
-            else
-            {
-                // closed
-                // закрытая
-                if (_openPositions.Find(pos => pos != null && pos.Number == position.Number) != null)
-                {
-                    _openPositions.Remove(position);
+                    // closed
+                    // закрытая
+                    if (_openPositions.Find(pos => pos != null && pos.Number == position.Number) != null)
+                    {
+                        _openPositions.Remove(position);
+                    }
                 }
             }
         }

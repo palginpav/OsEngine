@@ -1829,8 +1829,10 @@ ContextMenuStrip menu)
                         && firstChartTP != null 
                         &&
                         (firstChartTP.PositionXPoint > _myCandles.Count - 1
+                         || firstChartTP.PositionXPoint < 0
                          || firstChartTP.PositionTime < _myCandles[firstChartTP.PositionXPoint].TimeStart
                          || (_myCandles.Count - 1 > firstChartTP.PositionXPoint &&
+                             firstChartTP.PositionXPoint + 1 < _myCandles.Count &&
                              firstChartTP.PositionTime > _myCandles[firstChartTP.PositionXPoint + 1].TimeStart)))
                     {
                         _timePoints.Clear();
@@ -3475,7 +3477,7 @@ ContextMenuStrip menu)
                 if (_clickElement != null && _clickElement.TypeName() == "PointElement")
                 {
                     PointElement elem = (PointElement)_clickElement;
-                    if (moveInInts > 0 && moveInInts < candleSeries.Points.Count)
+                    if (moveInInts > 0 && moveInInts < candleSeries.Points.Count && moveInInts < _myCandles.Count)
                     {
                         DateTime time = _myCandles[moveInInts].TimeStart;
 
@@ -5334,7 +5336,10 @@ ContextMenuStrip menu)
 
                     if (series[i].Name == "SeriesCandle")
                     {
-                        labelSeries.Points[0].Label = _myCandles[index].ToolTip;
+                        if (index >= 0 && index < _myCandles.Count)
+                        {
+                            labelSeries.Points[0].Label = _myCandles[index].ToolTip;
+                        }
                     }
                     else if (series[i].ChartTypeName == "Candlestick")
                     {
@@ -7718,7 +7723,11 @@ ContextMenuStrip menu)
 
                 area.AxisX.CustomLabels[i].FromPosition = value - area.AxisX.Interval * 0.7;
                 area.AxisX.CustomLabels[i].ToPosition = value + area.AxisX.Interval * 0.7;
-                area.AxisX.CustomLabels[i].Text = _myCandles[(int)value].TimeStart.ToString(_cultureInterfaces);
+                int candleIndex = (int)value;
+                if (candleIndex >= 0 && candleIndex < _myCandles.Count)
+                {
+                    area.AxisX.CustomLabels[i].Text = _myCandles[candleIndex].TimeStart.ToString(_cultureInterfaces);
+                }
                 
                 value += area.AxisX.Interval;
 

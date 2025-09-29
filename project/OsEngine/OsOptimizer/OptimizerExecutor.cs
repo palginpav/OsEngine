@@ -664,11 +664,8 @@ namespace OsEngine.OsOptimizer
         {
             OptimizerServer server = CreateNewServer(report, true);
 
-            try
-            {
-                decimal num = Convert.ToDecimal(botName.Substring(0, 1));
-            }
-            catch
+            // Check if bot name starts with a number, if not prepend server number
+            if (string.IsNullOrEmpty(botName) || !char.IsDigit(botName[0]))
             {
                 botName = server.NumberServer + botName;
             }

@@ -553,9 +553,9 @@ namespace OsEngine.Robots
             allBotNames.AddRange(GetScriptsNamesStrategy());
             allBotNames = allBotNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList(); // Ensure unique names
 
-            // Determine number of threads (e.g., based on processor count or a fixed number)
-            int numThreads = Math.Min(Environment.ProcessorCount, 10); // Cap at 10 as in original
-            if (numThreads <= 0) numThreads = 1;
+            // Dynamic thread count based on processor count for better performance
+            int numThreads = Math.Min(Environment.ProcessorCount * 2, 16); // Cap at 16 for better performance
+            if (numThreads <= 0) numThreads = 2; // Minimum of 2 threads
 
 
             for (int i = 0; i < numThreads; i++)

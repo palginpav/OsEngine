@@ -17,13 +17,21 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
     {
         public AsyncBotFactory()
         {
-            for (int i = 0; i < 10; i++)
+            // Dynamic thread count based on processor count, with reasonable limits
+            int optimalThreadCount = Math.Min(Environment.ProcessorCount * 2, 20); // Cap at 20 for safety
+            if (optimalThreadCount <= 0) optimalThreadCount = 4; // Minimum of 4 threads
+            
+            for (int i = 0; i < optimalThreadCount; i++)
             {
                 _botsToStart.Add(new List<string>());
                 Thread worker = new Thread(WorkerArea);
                 worker.Name = i.ToString();
+                worker.IsBackground = true; // Mark as background thread
                 worker.Start();
             }
+            
+            // Log thread configuration for performance monitoring
+            SendLogMessage($"AsyncBotFactory thread configuration: {optimalThreadCount} threads (CPU cores: {Environment.ProcessorCount})", LogMessageType.System);
         }
 
         private string _botLocker = "botLocker";
@@ -90,7 +98,20 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
 
         private void WorkerArea()
         {
-            int num = Convert.ToInt32(Thread.CurrentThread.Name);
+            // Safely get thread index from thread name
+            int num = 0;
+            if (!int.TryParse(Thread.CurrentThread.Name, out num))
+            {
+                // Fallback: find thread index by matching thread reference
+                for (int i = 0; i < _botsToStart.Count; i++)
+                {
+                    if (Thread.CurrentThread.Name == i.ToString())
+                    {
+                        num = i;
+                        break;
+                    }
+                }
+            }
 
             while (true)
             {

@@ -16,6 +16,7 @@ using OsEngine.Logging;
 using OsEngine.Market.Connectors;
 using OsEngine.OsTrader.Panels;
 using OsEngine.OsTrader.Panels.Tab;
+using OsEngine.Performance;
 
 namespace OsEngine.Market.Servers.Tester
 {
@@ -782,16 +783,21 @@ namespace OsEngine.Market.Servers.Tester
 
                 if (lastCandle == null)
                 {
-                    lastCandle = new Candle();
+                    lastCandle = SafeObjectPools.TemporaryCandlePool.Get();
                     lastCandle.SetCandleFromString(reader.ReadLine());
                     continue;
                 }
 
-                var currentCandle = new Candle();
+                var currentCandle = SafeObjectPools.TemporaryCandlePool.Get();
                 currentCandle.SetCandleFromString(reader.ReadLine());
 
                 var currentTimeSpan = currentCandle.TimeStart - lastCandle.TimeStart;
 
+                // Return the previous candle to pool since we're replacing it
+                if (lastCandle != null)
+                {
+                    SafeObjectPools.TemporaryCandlePool.Return(lastCandle);
+                }
                 lastCandle = currentCandle;
 
                 if (currentTimeSpan < lastTimeSpan)
@@ -2784,10 +2790,6 @@ namespace OsEngine.Market.Servers.Tester
                 // Parallel loading of security directories for better performance
                 // Параллельная загрузка директорий с данными для лучшей производительности
                 LoadSecuritiesParallel(directories);
-                
-                // Optional: Compare with sequential loading for performance measurement
-                // Опционально: Сравнение с последовательной загрузкой для измерения производительности
-                // LoadSecuritiesSequential(directories);
 
                 _dataIsReady = true;
             }
@@ -2820,12 +2822,6 @@ namespace OsEngine.Market.Servers.Tester
         /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
         private void LoadSecuritiesParallel(string[] directories)
         {
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            int totalDirectories = directories.Length;
-            
-            SendLogMessage($"🚀 Начинаем параллельную загрузку {totalDirectories} инструментов на {Environment.ProcessorCount} ядрах", LogMessageType.System);
-            ServerMaster.SendNewLogMessage($"🚀 Начинаем параллельную загрузку {totalDirectories} инструментов на {Environment.ProcessorCount} ядрах", LogMessageType.System);
-
             // Use Parallel.ForEach for concurrent processing
             // Используем Parallel.ForEach для параллельной обработки
             Parallel.ForEach(directories, new ParallelOptions
@@ -2844,49 +2840,6 @@ namespace OsEngine.Market.Servers.Tester
                     SendLogMessage($"Error loading security from {directory}: {ex.Message}", LogMessageType.Error);
                 }
             });
-
-            stopwatch.Stop();
-            double seconds = stopwatch.Elapsed.TotalSeconds;
-            double avgTimePerSecurity = seconds / totalDirectories;
-            
-            SendLogMessage($"✅ Параллельная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
-            ServerMaster.SendNewLogMessage($"✅ Параллельная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
-        }
-
-        /// <summary>
-        /// Sequential loading method for performance comparison.
-        /// Use this to measure the difference between sequential and parallel loading.
-        /// 
-        /// Последовательный метод загрузки для сравнения производительности.
-        /// Используйте для измерения разницы между последовательной и параллельной загрузкой.
-        /// </summary>
-        /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
-        private void LoadSecuritiesSequential(string[] directories)
-        {
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            int totalDirectories = directories.Length;
-            
-            SendLogMessage($"🐌 Начинаем последовательную загрузку {totalDirectories} инструментов", LogMessageType.System);
-            ServerMaster.SendNewLogMessage($"🐌 Начинаем последовательную загрузку {totalDirectories} инструментов", LogMessageType.System);
-
-            for (int i = 0; i < directories.Length; i++)
-            {
-                try
-                {
-                    LoadSecurity(directories[i]);
-                }
-                catch (Exception ex)
-                {
-                    SendLogMessage($"Error loading security from {directories[i]}: {ex.Message}", LogMessageType.Error);
-                }
-            }
-
-            stopwatch.Stop();
-            double seconds = stopwatch.Elapsed.TotalSeconds;
-            double avgTimePerSecurity = seconds / totalDirectories;
-            
-            SendLogMessage($"✅ Последовательная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
-            ServerMaster.SendNewLogMessage($"✅ Последовательная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
         }
 
         private void LoadSecurity(string path)
@@ -2904,7 +2857,13 @@ namespace OsEngine.Market.Servers.Tester
             {
                 try
                 {
-                    string name = directory.Split('\\')[3];
+                    string[] pathParts = directory.Split('\\');
+                    if (pathParts.Length < 4)
+                    {
+                        SendLogMessage($"Invalid directory path structure: {directory}", LogMessageType.Error);
+                        return; // Use return instead of continue in Parallel.ForEach
+                    }
+                    string name = pathParts[3];
 
                     if (name == "MarketDepth")
                     {
@@ -2982,13 +2941,15 @@ namespace OsEngine.Market.Servers.Tester
                 try
                 {
                     // check whether candles are in the file / смотрим свечи ли в файле
-                    Candle candle = new Candle();
+                    Candle candle = SafeObjectPools.TemporaryCandlePool.Get();
                     candle.SetCandleFromString(firstRowInFile);
                     // candles are in the file. We look at which ones / в файле свечи. Смотрим какие именно
 
                     security[security.Count - 1].TimeStart = candle.TimeStart;
+                    // Return temporary candle to pool after extracting needed data
+                    SafeObjectPools.TemporaryCandlePool.Return(candle);
 
-                    Candle candle2 = new Candle();
+                    Candle candle2 = SafeObjectPools.TemporaryCandlePool.Get();
                     candle2.SetCandleFromString(reader.ReadLine());
 
                     security[security.Count - 1].DataType = SecurityTesterDataType.Candle;
@@ -3016,13 +2977,15 @@ namespace OsEngine.Market.Servers.Tester
                             continue;
                         }
 
-                        Candle candleN = new Candle();
+                        Candle candleN = SafeObjectPools.TemporaryCandlePool.Get();
                         candleN.SetCandleFromString(reader.ReadLine());
 
                         decimal openD = (decimal)Convert.ToDouble(candleN.Open);
                         decimal highD = (decimal)Convert.ToDouble(candleN.High);
                         decimal lowD = (decimal)Convert.ToDouble(candleN.Low);
                         decimal closeD = (decimal)Convert.ToDouble(candleN.Close);
+                        // Return temporary candle to pool after extracting needed data
+                        SafeObjectPools.TemporaryCandlePool.Return(candleN);
 
                         string open = openD.ToString().Replace(",", ".");
                         string high = highD.ToString().Replace(",", ".");
@@ -3183,9 +3146,11 @@ namespace OsEngine.Market.Servers.Tester
                         lastString = curStr;
                     }
 
-                    Candle candle3 = new Candle();
+                    Candle candle3 = SafeObjectPools.TemporaryCandlePool.Get();
                     candle3.SetCandleFromString(lastString);
                     security[security.Count - 1].TimeEnd = candle3.TimeStart;
+                    // Return temporary candle to pool after extracting needed data
+                    SafeObjectPools.TemporaryCandlePool.Return(candle3);
                     continue;
                 }
                 catch (Exception)
@@ -3315,12 +3280,14 @@ namespace OsEngine.Market.Servers.Tester
                 try
                 {
                     // check whether ticks are in the file / смотрим тики ли в файле
-                    Trade trade = new Trade();
+                    Trade trade = SafeObjectPools.TemporaryTradePool.Get();
                     trade.SetTradeFromString(firstRowInFile);
                     // ticks are in the file / в файле тики
 
                     security[security.Count - 1].TimeStart = trade.Time;
                     security[security.Count - 1].DataType = SecurityTesterDataType.Tick;
+                    // Return temporary trade to pool after extracting needed data
+                    SafeObjectPools.TemporaryTradePool.Return(trade);
 
                     // price step / шаг цены
 
@@ -3331,11 +3298,12 @@ namespace OsEngine.Market.Servers.Tester
 
                     for (int i2 = 0; i2 < 100; i2++)
                     {
-                        Trade tradeN = new Trade();
+                        Trade tradeN = SafeObjectPools.TemporaryTradePool.Get();
                         tradeN.SetTradeFromString(reader.ReadLine());
 
                         decimal open = (decimal)Convert.ToDouble(tradeN.Price);
-
+                        // Return temporary trade to pool after extracting needed data
+                        SafeObjectPools.TemporaryTradePool.Return(tradeN);
 
                         if (open.ToString(culture).Split('.').Length > 1)
                         {
@@ -3435,9 +3403,11 @@ namespace OsEngine.Market.Servers.Tester
                         lastString2 = curRow;
                     }
 
-                    Trade trade2 = new Trade();
+                    Trade trade2 = SafeObjectPools.TemporaryTradePool.Get();
                     trade2.SetTradeFromString(lastString2);
                     security[security.Count - 1].TimeEnd = trade2.Time;
+                    // Return temporary trade to pool after extracting needed data
+                    SafeObjectPools.TemporaryTradePool.Return(trade2);
                 }
                 catch (Exception)
                 {
