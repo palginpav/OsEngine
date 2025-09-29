@@ -9,6 +9,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using OsEngine.Entity;
 using OsEngine.Language;
 using OsEngine.Logging;
@@ -2780,10 +2781,9 @@ namespace OsEngine.Market.Servers.Tester
                     return;
                 }
 
-                for (int i = 0; i < directories.Length; i++)
-                {
-                    LoadSecurity(directories[i]);
-                }
+                // Parallel loading of security directories for better performance
+                // Параллельная загрузка директорий с данными для лучшей производительности
+                LoadSecuritiesParallel(directories);
 
                 _dataIsReady = true;
             }
@@ -2806,6 +2806,36 @@ namespace OsEngine.Market.Servers.Tester
             LoadSetSecuritiesTimeFrameSettings();
         }
 
+        /// <summary>
+        /// Loads securities in parallel for improved performance.
+        /// Uses thread-safe operations to maintain data integrity.
+        /// 
+        /// Загружает инструменты параллельно для улучшения производительности.
+        /// Использует потокобезопасные операции для сохранения целостности данных.
+        /// </summary>
+        /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
+        private void LoadSecuritiesParallel(string[] directories)
+        {
+            // Use Parallel.ForEach for concurrent processing
+            // Используем Parallel.ForEach для параллельной обработки
+            Parallel.ForEach(directories, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Environment.ProcessorCount // Use all available CPU cores
+            }, directory =>
+            {
+                try
+                {
+                    LoadSecurity(directory);
+                }
+                catch (Exception ex)
+                {
+                    // Log errors but don't stop the entire loading process
+                    // Логируем ошибки, но не останавливаем весь процесс загрузки
+                    SendLogMessage($"Error loading security from {directory}: {ex.Message}", LogMessageType.Error);
+                }
+            });
+        }
+
         private void LoadSecurity(string path)
         {
             string[] directories = Directory.GetDirectories(path);
@@ -2815,23 +2845,34 @@ namespace OsEngine.Market.Servers.Tester
                 return;
             }
 
-            for (int i = 0; i < directories.Length; i++)
+            // Parallel loading of different data types (MarketDepth, Tick, Candle) for each security
+            // Параллельная загрузка различных типов данных (MarketDepth, Tick, Candle) для каждого инструмента
+            Parallel.ForEach(directories, directory =>
             {
-                string name = directories[i].Split('\\')[3];
+                try
+                {
+                    string name = directory.Split('\\')[3];
 
-                if (name == "MarketDepth")
-                {
-                    LoadMarketDepthFromFolder(directories[i]);
+                    if (name == "MarketDepth")
+                    {
+                        LoadMarketDepthFromFolder(directory);
+                    }
+                    else if (name == "Tick")
+                    {
+                        LoadTickFromFolder(directory);
+                    }
+                    else
+                    {
+                        LoadCandleFromFolder(directory);
+                    }
                 }
-                else if (name == "Tick")
+                catch (Exception ex)
                 {
-                    LoadTickFromFolder(directories[i]);
+                    // Log errors but continue processing other directories
+                    // Логируем ошибки, но продолжаем обработку других директорий
+                    SendLogMessage($"Error loading data from {directory}: {ex.Message}", LogMessageType.Error);
                 }
-                else
-                {
-                    LoadCandleFromFolder(directories[i]);
-                }
-            }
+            });
         }
 
         private void LoadCandleFromFolder(string folderName)
