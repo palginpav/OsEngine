@@ -2824,6 +2824,7 @@ namespace OsEngine.Market.Servers.Tester
             int totalDirectories = directories.Length;
             
             SendLogMessage($"🚀 Начинаем параллельную загрузку {totalDirectories} инструментов на {Environment.ProcessorCount} ядрах", LogMessageType.System);
+            ServerMaster.SendNewLogMessage($"🚀 Начинаем параллельную загрузку {totalDirectories} инструментов на {Environment.ProcessorCount} ядрах", LogMessageType.System);
 
             // Use Parallel.ForEach for concurrent processing
             // Используем Parallel.ForEach для параллельной обработки
@@ -2849,6 +2850,7 @@ namespace OsEngine.Market.Servers.Tester
             double avgTimePerSecurity = seconds / totalDirectories;
             
             SendLogMessage($"✅ Параллельная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
+            ServerMaster.SendNewLogMessage($"✅ Параллельная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
         }
 
         /// <summary>
@@ -2865,6 +2867,7 @@ namespace OsEngine.Market.Servers.Tester
             int totalDirectories = directories.Length;
             
             SendLogMessage($"🐌 Начинаем последовательную загрузку {totalDirectories} инструментов", LogMessageType.System);
+            ServerMaster.SendNewLogMessage($"🐌 Начинаем последовательную загрузку {totalDirectories} инструментов", LogMessageType.System);
 
             for (int i = 0; i < directories.Length; i++)
             {
@@ -2883,6 +2886,7 @@ namespace OsEngine.Market.Servers.Tester
             double avgTimePerSecurity = seconds / totalDirectories;
             
             SendLogMessage($"✅ Последовательная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
+            ServerMaster.SendNewLogMessage($"✅ Последовательная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
         }
 
         private void LoadSecurity(string path)
