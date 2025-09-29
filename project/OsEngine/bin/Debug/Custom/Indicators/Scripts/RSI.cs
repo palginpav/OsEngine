@@ -16,7 +16,7 @@ namespace OsEngine.Indicators
         {
             _length = CreateParameterInt("Length", 14);
 
-            _series = CreateSeries("Ma", Color.DodgerBlue, IndicatorChartPaintType.Line, true);
+            _series = CreateSeries("RSI", Color.DodgerBlue, IndicatorChartPaintType.Line, true);
         }
 
         public override void OnProcess(List<Candle> candles, int index)

@@ -33,7 +33,7 @@ namespace OsEngine.Indicators
                 _lengthSignalLine = CreateParameterInt("Signal line length", 9);
 
                 _seriesMacdHistogram = CreateSeries("MACD Histogram", Color.DodgerBlue, IndicatorChartPaintType.Column, true);
-                _seriesMacd = CreateSeries("MACD", Color.DarkGreen, IndicatorChartPaintType.Line, false);
+                _seriesMacd = CreateSeries("MACD", Color.DarkGreen, IndicatorChartPaintType.Line, true);
                 _seriesSignalLine = CreateSeries("Signal line", Color.DarkRed, IndicatorChartPaintType.Line, true);
 
                 _emaFast = IndicatorsFactory.CreateIndicatorByName("Ema", Name + "Ema fast", false);

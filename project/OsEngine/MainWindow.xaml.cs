@@ -152,10 +152,11 @@ namespace OsEngine
 
             this.ContentRendered += MainWindow_ContentRendered;
         }
-        private void GifT_MediaEnded(object sender, RoutedEventArgs e)
-        {
-            GifT.Pause(); // останавливаем на последнем кадре
-        }
+        // Temporarily disabled due to missing video file
+        // private void GifT_MediaEnded(object sender, RoutedEventArgs e)
+        // {
+        //     GifT.Pause(); // останавливаем на последнем кадре
+        // }
         #region Block and Unblock interface
 
         private void BlockInterface()
@@ -320,7 +321,7 @@ namespace OsEngine
             {
                 VideoGrid.Visibility = Visibility.Visible;
                 this.Height = 430;
-                GifT.Play();
+                // GifT.Play(); // Temporarily disabled due to missing video file
             }
             else
             {
@@ -877,8 +878,8 @@ namespace OsEngine
 
                 ButtonLocal_Ru.Background = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff5500");
                 ButtonLocal_Eng.Background = (SolidColorBrush)new BrushConverter().ConvertFrom("#FF111217");
-                GifT.Position = TimeSpan.Zero;
-                GifT.Play();
+                // GifT.Position = TimeSpan.Zero; // Temporarily disabled due to missing video file
+                // GifT.Play();
             }
         }
 

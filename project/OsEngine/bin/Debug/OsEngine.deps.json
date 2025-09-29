@@ -11,6 +11,8 @@
           "Google.Api.CommonProtos": "2.16.0",
           "Google.Protobuf": "3.31.0",
           "Grpc.Net.Client": "2.71.0",
+          "ILGPU": "1.5.3",
+          "ILGPU.Algorithms": "1.5.3",
           "Microsoft.CSharp": "4.7.0",
           "Microsoft.CodeAnalysis.CSharp": "4.13.0",
           "Newtonsoft.Json": "13.0.3",
@@ -90,6 +92,25 @@
           "lib/net8.0/Grpc.Net.Common.dll": {
             "assemblyVersion": "2.0.0.0",
             "fileVersion": "2.71.0.0"
+          }
+        }
+      },
+      "ILGPU/1.5.3": {
+        "runtime": {
+          "lib/net7.0/ILGPU.dll": {
+            "assemblyVersion": "1.5.3.0",
+            "fileVersion": "1.5.3.0"
+          }
+        }
+      },
+      "ILGPU.Algorithms/1.5.3": {
+        "dependencies": {
+          "ILGPU": "1.5.3"
+        },
+        "runtime": {
+          "lib/net7.0/ILGPU.Algorithms.dll": {
+            "assemblyVersion": "1.5.3.0",
+            "fileVersion": "1.5.3.0"
           }
         }
       },
@@ -663,6 +684,20 @@
       "sha512": "sha512-v0c8R97TwRYwNXlC8GyRXwYTCNufpDfUtj9la+wUrZFzVWkFJuNAltU+c0yI3zu0jl54k7en6u2WKgZgd57r2Q==",
       "path": "grpc.net.common/2.71.0",
       "hashPath": "grpc.net.common.2.71.0.nupkg.sha512"
+    },
+    "ILGPU/1.5.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-VhAfQqnp/qTcQla5zcBPQIoUJox8T1EuZLuKrynFFE1BQvOOUCksiCb9IQAJa2MSJf6QDi5YIoG45K0I+GWcgg==",
+      "path": "ilgpu/1.5.3",
+      "hashPath": "ilgpu.1.5.3.nupkg.sha512"
+    },
+    "ILGPU.Algorithms/1.5.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-KySqYhghiJKkf77NTLcxebFzD2hz/hpO1Dxz/B0IpnowhwKD3i+PVaGa3E+TXahGHY6711HVOWpKr07wV6qEOg==",
+      "path": "ilgpu.algorithms/1.5.3",
+      "hashPath": "ilgpu.algorithms.1.5.3.nupkg.sha512"
     },
     "Microsoft.Bcl.TimeProvider/8.0.1": {
       "type": "package",
