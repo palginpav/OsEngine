@@ -2784,6 +2784,10 @@ namespace OsEngine.Market.Servers.Tester
                 // Parallel loading of security directories for better performance
                 // Параллельная загрузка директорий с данными для лучшей производительности
                 LoadSecuritiesParallel(directories);
+                
+                // Optional: Compare with sequential loading for performance measurement
+                // Опционально: Сравнение с последовательной загрузкой для измерения производительности
+                // LoadSecuritiesSequential(directories);
 
                 _dataIsReady = true;
             }
@@ -2816,6 +2820,11 @@ namespace OsEngine.Market.Servers.Tester
         /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
         private void LoadSecuritiesParallel(string[] directories)
         {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            int totalDirectories = directories.Length;
+            
+            SendLogMessage($"🚀 Начинаем параллельную загрузку {totalDirectories} инструментов на {Environment.ProcessorCount} ядрах", LogMessageType.System);
+
             // Use Parallel.ForEach for concurrent processing
             // Используем Parallel.ForEach для параллельной обработки
             Parallel.ForEach(directories, new ParallelOptions
@@ -2834,6 +2843,46 @@ namespace OsEngine.Market.Servers.Tester
                     SendLogMessage($"Error loading security from {directory}: {ex.Message}", LogMessageType.Error);
                 }
             });
+
+            stopwatch.Stop();
+            double seconds = stopwatch.Elapsed.TotalSeconds;
+            double avgTimePerSecurity = seconds / totalDirectories;
+            
+            SendLogMessage($"✅ Параллельная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Sequential loading method for performance comparison.
+        /// Use this to measure the difference between sequential and parallel loading.
+        /// 
+        /// Последовательный метод загрузки для сравнения производительности.
+        /// Используйте для измерения разницы между последовательной и параллельной загрузкой.
+        /// </summary>
+        /// <param name="directories">Array of directory paths to load / Массив путей к директориям для загрузки</param>
+        private void LoadSecuritiesSequential(string[] directories)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            int totalDirectories = directories.Length;
+            
+            SendLogMessage($"🐌 Начинаем последовательную загрузку {totalDirectories} инструментов", LogMessageType.System);
+
+            for (int i = 0; i < directories.Length; i++)
+            {
+                try
+                {
+                    LoadSecurity(directories[i]);
+                }
+                catch (Exception ex)
+                {
+                    SendLogMessage($"Error loading security from {directories[i]}: {ex.Message}", LogMessageType.Error);
+                }
+            }
+
+            stopwatch.Stop();
+            double seconds = stopwatch.Elapsed.TotalSeconds;
+            double avgTimePerSecurity = seconds / totalDirectories;
+            
+            SendLogMessage($"✅ Последовательная загрузка завершена: {totalDirectories} инструментов за {seconds:F2} сек ({avgTimePerSecurity:F3} сек/инструмент)", LogMessageType.System);
         }
 
         private void LoadSecurity(string path)
