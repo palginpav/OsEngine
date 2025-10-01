@@ -3212,6 +3212,8 @@ namespace OsEngine.OsOptimizer
                 return;
             }
 
+            // Perform actual backtesting with selected parameters when Chart button is clicked
+            // This ensures the bot is in a fresh, fully functional state for chart display
             BotPanel bot = _master.TestBot(fazeReport, fazeReport.Reports[e.RowIndex]);
 
             BotPanelChartUi ui = bot.ShowChartDialog();

@@ -966,9 +966,10 @@ namespace OsEngine.OsOptimizer
                 {
                     IIStrategyParameter par = null;
 
-                    if (parametersOptimized != null)
+                    if (parametersOptimized != null && i < parametersOptimized.Count)
                     {
-                        par = parametersOptimized.Find(p => p.Name == parameters[i].Name);
+                        // Use index-based matching instead of name-based matching for better reliability
+                        par = parametersOptimized[i];
                     }
                     bool isInOptimizeParameters = true;
 

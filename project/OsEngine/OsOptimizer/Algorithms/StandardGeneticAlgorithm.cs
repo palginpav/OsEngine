@@ -280,7 +280,7 @@ namespace OsEngine.OsOptimizer.Algorithms
                                     individual.OutSampleReport = outSampleResult;
                                 }
                             }
-                            catch (Exception ex)
+                            catch (Exception)
                             {
                                 // Log error but continue with other individuals
                             }
@@ -291,7 +291,7 @@ namespace OsEngine.OsOptimizer.Algorithms
                     {
                         // OutSample testing was cancelled
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         // OutSample testing failed
                     }
@@ -555,7 +555,7 @@ namespace OsEngine.OsOptimizer.Algorithms
                         await Task.Delay(retryDelayMs);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     if (attempt < maxRetries)
                     {
@@ -829,6 +829,29 @@ namespace OsEngine.OsOptimizer.Algorithms
         }
 
         /// <summary>
+        /// Validate and round a decimal value to the nearest valid step.
+        /// Проверить и округлить десятичное значение до ближайшего допустимого шага.
+        /// </summary>
+        /// <param name="value">Value to validate / Значение для проверки</param>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <returns>Validated value / Проверенное значение</returns>
+        private static decimal ValidateDecimalStep(decimal value, decimal start, decimal step)
+        {
+            if (step <= 0)
+                return value;
+
+            // Calculate how many steps from start
+            decimal stepsFromStart = (value - start) / step;
+            
+            // Round to nearest step
+            int roundedSteps = (int)Math.Round(stepsFromStart);
+            
+            // Calculate the valid value
+            return start + (roundedSteps * step);
+        }
+
+        /// <summary>
         /// Apply mutation to a specific parameter.
         /// Применить мутацию к конкретному параметру.
         /// </summary>
@@ -846,7 +869,34 @@ namespace OsEngine.OsOptimizer.Algorithms
                     double mutation = (_random.NextDouble() - 0.5) * range * 0.1; // 10% of range
                     double newValue = Math.Max((double)decimalParam.ValueDecimalStart, 
                                              Math.Min((double)decimalParam.ValueDecimalStop, currentValue + mutation));
-                    decimalParam.ValueDecimal = (decimal)newValue;
+                    // Validate the new value against step constraints
+                    decimalParam.ValueDecimal = ValidateDecimalStep((decimal)newValue, decimalParam.ValueDecimalStart, decimalParam.ValueDecimalStep);
+                }
+                else if (parameter is StrategyParameterDecimal decimalParam2)
+                {
+                    // For decimal parameters, add small random change
+                    double currentValue = (double)decimalParam2.ValueDecimal;
+                    double range = (double)(decimalParam2.ValueDecimalStop - decimalParam2.ValueDecimalStart);
+                    double mutation = (_random.NextDouble() - 0.5) * range * 0.1; // 10% of range
+                    double newValue = Math.Max((double)decimalParam2.ValueDecimalStart, 
+                                             Math.Min((double)decimalParam2.ValueDecimalStop, currentValue + mutation));
+                    // Validate the new value against step constraints
+                    decimalParam2.ValueDecimal = ValidateDecimalStep((decimal)newValue, decimalParam2.ValueDecimalStart, decimalParam2.ValueDecimalStep);
+                }
+                else if (parameter is StrategyParameterInt intParam)
+                {
+                    // For integer parameters, add small random change
+                    int currentValue = intParam.ValueInt;
+                    int range = intParam.ValueIntStop - intParam.ValueIntStart;
+                    int mutation = (int)(range * 0.1 * (_random.NextDouble() - 0.5) * 2); // 10% of range
+                    int newValue = Math.Max(intParam.ValueIntStart, Math.Min(intParam.ValueIntStop, currentValue + mutation));
+                    // Validate the new value against step constraints
+                    if (intParam.ValueIntStep > 0)
+                    {
+                        int stepsFromStart = (newValue - intParam.ValueIntStart) / intParam.ValueIntStep;
+                        newValue = intParam.ValueIntStart + (stepsFromStart * intParam.ValueIntStep);
+                    }
+                    intParam.ValueInt = newValue;
                 }
                 else if (parameter is StrategyParameterTimeOfDay timeParam)
                 {

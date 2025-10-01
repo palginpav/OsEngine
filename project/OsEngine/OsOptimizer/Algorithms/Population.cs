@@ -383,6 +383,110 @@ namespace OsEngine.OsOptimizer.Algorithms
         }
 
         /// <summary>
+        /// Validate and round a decimal value to the nearest valid step.
+        /// This ensures that parameter values respect the step constraints defined in the optimization grid.
+        /// For example, with start=1.0, step=0.1, only values like 1.0, 1.1, 1.2, 1.3, etc. are valid.
+        /// Values like 1.1111516 will be rounded to the nearest valid step (1.1 in this case).
+        /// 
+        /// Проверить и округлить десятичное значение до ближайшего допустимого шага.
+        /// Это гарантирует, что значения параметров соблюдают ограничения шага, определенные в сетке оптимизации.
+        /// Например, при start=1.0, step=0.1, допустимы только значения типа 1.0, 1.1, 1.2, 1.3 и т.д.
+        /// Значения типа 1.1111516 будут округлены до ближайшего допустимого шага (1.1 в данном случае).
+        /// </summary>
+        /// <param name="value">Value to validate / Значение для проверки</param>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <returns>Validated value / Проверенное значение</returns>
+        private static decimal ValidateDecimalStep(decimal value, decimal start, decimal step)
+        {
+            if (step <= 0)
+                return value;
+
+            // Calculate how many steps from start
+            decimal stepsFromStart = (value - start) / step;
+            
+            // Round to nearest step
+            int roundedSteps = (int)Math.Round(stepsFromStart);
+            
+            // Calculate the valid value
+            return start + (roundedSteps * step);
+        }
+
+        /// <summary>
+        /// Validate and round an integer value to the nearest valid step.
+        /// Проверить и округлить целочисленное значение до ближайшего допустимого шага.
+        /// </summary>
+        /// <param name="value">Value to validate / Значение для проверки</param>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <returns>Validated value / Проверенное значение</returns>
+        private static int ValidateIntStep(int value, int start, int step)
+        {
+            if (step <= 0)
+                return value;
+
+            // Calculate how many steps from start
+            int stepsFromStart = (value - start) / step;
+            
+            // Calculate the valid value
+            return start + (stepsFromStart * step);
+        }
+
+        /// <summary>
+        /// Generate a random decimal value that respects the step constraint.
+        /// Сгенерировать случайное десятичное значение, которое соблюдает ограничение шага.
+        /// </summary>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="stop">Stop value / Конечное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <param name="random">Random number generator / Генератор случайных чисел</param>
+        /// <returns>Random value respecting step constraint / Случайное значение, соблюдающее ограничение шага</returns>
+        private static decimal GenerateRandomDecimalWithStep(decimal start, decimal stop, decimal step, Random random)
+        {
+            if (step <= 0)
+                return (decimal)(random.NextDouble() * (double)(stop - start) + (double)start);
+
+            // Calculate number of valid steps
+            int stepCount = (int)((stop - start) / step);
+            
+            if (stepCount <= 0)
+                return start;
+
+            // Generate random step index
+            int randomStepIndex = random.Next(0, stepCount + 1);
+            
+            // Calculate the valid value
+            return start + (randomStepIndex * step);
+        }
+
+        /// <summary>
+        /// Generate a random integer value that respects the step constraint.
+        /// Сгенерировать случайное целочисленное значение, которое соблюдает ограничение шага.
+        /// </summary>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="stop">Stop value / Конечное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <param name="random">Random number generator / Генератор случайных чисел</param>
+        /// <returns>Random value respecting step constraint / Случайное значение, соблюдающее ограничение шага</returns>
+        private static int GenerateRandomIntWithStep(int start, int stop, int step, Random random)
+        {
+            if (step <= 0)
+                return random.Next(start, stop + 1);
+
+            // Calculate number of valid steps
+            int stepCount = (stop - start) / step;
+            
+            if (stepCount <= 0)
+                return start;
+
+            // Generate random step index
+            int randomStepIndex = random.Next(0, stepCount + 1);
+            
+            // Calculate the valid value
+            return start + (randomStepIndex * step);
+        }
+
+        /// <summary>
         /// Create a random value for a parameter.
         /// Создать случайное значение для параметра.
         /// </summary>
@@ -395,7 +499,7 @@ namespace OsEngine.OsOptimizer.Algorithms
 
                 case StrategyParameterType.Int:
                     var intParam = (StrategyParameterInt)parameter;
-                    var intValue = random.Next(intParam.ValueIntStart, intParam.ValueIntStop + 1);
+                    var intValue = GenerateRandomIntWithStep(intParam.ValueIntStart, intParam.ValueIntStop, intParam.ValueIntStep, random);
                     var newIntParam = new StrategyParameterInt(parameter.Name,
                         intParam.ValueIntDefolt, intParam.ValueIntStart, intParam.ValueIntStop, intParam.ValueIntStep);
                     newIntParam.ValueInt = intValue;
@@ -403,7 +507,7 @@ namespace OsEngine.OsOptimizer.Algorithms
 
                 case StrategyParameterType.Decimal:
                     var decimalParam = (StrategyParameterDecimal)parameter;
-                    var decimalValue = (decimal)(random.NextDouble() * (double)(decimalParam.ValueDecimalStop - decimalParam.ValueDecimalStart) + (double)decimalParam.ValueDecimalStart);
+                    var decimalValue = GenerateRandomDecimalWithStep(decimalParam.ValueDecimalStart, decimalParam.ValueDecimalStop, decimalParam.ValueDecimalStep, random);
                     var newDecimalParam = new StrategyParameterDecimal(parameter.Name,
                         decimalParam.ValueDecimalDefolt, decimalParam.ValueDecimalStart, decimalParam.ValueDecimalStop, decimalParam.ValueDecimalStep);
                     newDecimalParam.ValueDecimal = decimalValue;
@@ -431,7 +535,7 @@ namespace OsEngine.OsOptimizer.Algorithms
 
                 case StrategyParameterType.DecimalCheckBox:
                     var decimalCheckParam = (StrategyParameterDecimalCheckBox)parameter;
-                    var randomDecimalValue = (decimal)(random.NextDouble() * (double)(decimalCheckParam.ValueDecimalStop - decimalCheckParam.ValueDecimalStart) + (double)decimalCheckParam.ValueDecimalStart);
+                    var randomDecimalValue = GenerateRandomDecimalWithStep(decimalCheckParam.ValueDecimalStart, decimalCheckParam.ValueDecimalStop, decimalCheckParam.ValueDecimalStep, random);
                     var randomCheckState2 = random.NextDouble() < 0.5;
                     var newDecimalCheckParam = new StrategyParameterDecimalCheckBox(parameter.Name,
                         decimalCheckParam.ValueDecimalDefolt, decimalCheckParam.ValueDecimalStart, decimalCheckParam.ValueDecimalStop, decimalCheckParam.ValueDecimalStep,
@@ -442,6 +546,20 @@ namespace OsEngine.OsOptimizer.Algorithms
                 default:
                     return Individual.CopyParameter(parameter);
             }
+        }
+
+        /// <summary>
+        /// Test method to verify step validation is working correctly.
+        /// Тестовый метод для проверки правильности работы валидации шагов.
+        /// </summary>
+        /// <param name="start">Start value / Начальное значение</param>
+        /// <param name="stop">Stop value / Конечное значение</param>
+        /// <param name="step">Step size / Размер шага</param>
+        /// <param name="testValue">Value to test / Значение для тестирования</param>
+        /// <returns>Validated value / Проверенное значение</returns>
+        public static decimal TestStepValidation(decimal start, decimal stop, decimal step, decimal testValue)
+        {
+            return ValidateDecimalStep(testValue, start, step);
         }
 
         /// <summary>
