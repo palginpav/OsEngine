@@ -26,6 +26,7 @@ using OsEngine.OsTrader.Panels.Tab;
 using System.Linq;
 using System.Windows.Forms.DataVisualization.Charting;
 using System.Windows.Media;
+using OsEngine.OsOptimizer.Algorithms;
 
 namespace OsEngine.OsOptimizer
 {
@@ -49,6 +50,7 @@ namespace OsEngine.OsOptimizer
             CreateTableResults();
             CreateTableFazes();
             CreateTableParameters();
+            CreateAlgorithmParametersGrid();
             CreateTableOptimizeFazes();
             CreateChartSeriesResults();
 
@@ -60,6 +62,9 @@ namespace OsEngine.OsOptimizer
             ComboBoxThreadsCount.SelectedItem = _master.ThreadsCount;
             CreateThreadsProgressBars();
             ComboBoxThreadsCount.SelectionChanged += ComboBoxThreadsCount_SelectionChanged;
+
+            // Initialize algorithm selection
+            InitializeAlgorithmSelection();
 
             TextBoxStartPortfolio.Text = _master.StartDeposit.ToString();
             TextBoxStartPortfolio.TextChanged += TextBoxStartPortfolio_TextChanged;
@@ -74,6 +79,8 @@ namespace OsEngine.OsOptimizer
             CommissionValueLabel.Content = OsLocalization.Optimizer.Label41;
             CommissionValueTextBox.Text = _master.CommissionValue.ToString();
             CommissionValueTextBox.TextChanged += CommissionValueTextBoxOnTextChanged;
+
+            // Algorithm parameter event handlers
 
             // filters/фильтры
             CheckBoxFilterProfitIsOn.IsChecked = _master.FilterProfitIsOn;
@@ -438,6 +445,130 @@ namespace OsEngine.OsOptimizer
         private void ComboBoxThreadsCount_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             CreateThreadsProgressBars();
+        }
+
+        /// <summary>
+        /// Initialize algorithm selection UI.
+        /// Инициализировать UI выбора алгоритма.
+        /// </summary>
+        private void InitializeAlgorithmSelection()
+        {
+            try
+            {
+                // Populate algorithm combo box
+                var availableAlgorithms = _master.AvailableAlgorithms;
+                ComboBoxAlgorithm.Items.Clear();
+                
+                foreach (var algorithm in availableAlgorithms)
+                {
+                    var algorithmInfo = AlgorithmFactory.GetAlgorithmInfo(algorithm);
+                    ComboBoxAlgorithm.Items.Add(algorithmInfo.Name);
+                }
+                
+                // Set current selection
+                var currentAlgorithm = _master.SelectedAlgorithm;
+                var currentAlgorithmInfo = AlgorithmFactory.GetAlgorithmInfo(currentAlgorithm);
+                ComboBoxAlgorithm.SelectedItem = currentAlgorithmInfo.Name;
+                
+                // Initialize algorithm parameters
+                UpdateAlgorithmParameters();
+                
+                _master.SendLogMessage($"Algorithm selection initialized. Current: {currentAlgorithmInfo.Name}", LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error initializing algorithm selection: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Handle algorithm selection change.
+        /// Обработать изменение выбора алгоритма.
+        /// </summary>
+        private void ComboBoxAlgorithm_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                if (ComboBoxAlgorithm.SelectedItem == null) return;
+                
+                string selectedAlgorithmName = ComboBoxAlgorithm.SelectedItem.ToString();
+                
+                // Find the algorithm type by name
+                var availableAlgorithms = _master.AvailableAlgorithms;
+                AlgorithmFactory.AlgorithmType selectedAlgorithmType = AlgorithmFactory.AlgorithmType.BruteForce;
+                
+                foreach (var algorithm in availableAlgorithms)
+                {
+                    var algorithmInfo = AlgorithmFactory.GetAlgorithmInfo(algorithm);
+                    if (algorithmInfo.Name == selectedAlgorithmName)
+                    {
+                        selectedAlgorithmType = algorithm;
+                        break;
+                    }
+                }
+                
+                // Update the master with the new algorithm selection
+                _master.SelectedAlgorithm = selectedAlgorithmType;
+                
+                // Update algorithm parameters UI
+                UpdateAlgorithmParameters();
+                
+                _master.SendLogMessage($"Algorithm changed to: {selectedAlgorithmName}", LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error changing algorithm: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Update algorithm description display.
+        /// Обновить отображение описания алгоритма.
+        /// </summary>
+        private void UpdateAlgorithmParameters()
+        {
+            try
+            {
+                var currentAlgorithm = _master.SelectedAlgorithm;
+                var algorithmParameters = _master.AlgorithmParameters;
+                
+                // Update algorithm parameter grid based on current algorithm
+                if (_gridAlgorithmParameters != null && _gridAlgorithmParameters.Rows.Count >= 4)
+                {
+                    // Update Population Size
+                    if (algorithmParameters.ContainsKey("PopulationSize"))
+                    {
+                        _gridAlgorithmParameters.Rows[0].Cells[1].Value = algorithmParameters["PopulationSize"].ToString();
+                    }
+                    
+                    // Update Max Generations
+                    if (algorithmParameters.ContainsKey("MaxGenerations"))
+                    {
+                        _gridAlgorithmParameters.Rows[1].Cells[1].Value = algorithmParameters["MaxGenerations"].ToString();
+                    }
+                    
+                    // Update Mutation Rate
+                    if (algorithmParameters.ContainsKey("MutationRate"))
+                    {
+                        _gridAlgorithmParameters.Rows[2].Cells[1].Value = algorithmParameters["MutationRate"].ToString();
+                    }
+                    
+                    // Update Crossover Rate
+                    if (algorithmParameters.ContainsKey("CrossoverRate"))
+                    {
+                        _gridAlgorithmParameters.Rows[3].Cells[1].Value = algorithmParameters["CrossoverRate"].ToString();
+                    }
+                }
+                
+                // Show/hide algorithm parameters based on algorithm type
+                bool showGeneticParams = currentAlgorithm != AlgorithmFactory.AlgorithmType.BruteForce;
+                HostAlgorithmParams.Visibility = showGeneticParams ? Visibility.Visible : Visibility.Collapsed;
+                LabelAlgorithmParams.Visibility = showGeneticParams ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                _master.SendLogMessage($"Error updating algorithm parameters: {ex.Message}", LogMessageType.Error);
+            }
         }
 
         private List<ProgressBar> _progressBars;
@@ -815,6 +946,7 @@ namespace OsEngine.OsOptimizer
                 (string)CommissionTypeComboBox.SelectedItem);
             _master.CommissionType = commissionType;
         }
+
 
         private void ButtonServerDialog_Click(object sender, RoutedEventArgs e)
         {
@@ -1534,6 +1666,7 @@ namespace OsEngine.OsOptimizer
         private List<bool> _parametersActive;
 
         private DataGridView _gridParameters;
+        private DataGridView _gridAlgorithmParameters;
 
         private void CreateTableParameters()
         {
@@ -1604,6 +1737,115 @@ namespace OsEngine.OsOptimizer
             _gridParameters.DataError += _gridParameters_DataError;
 
             HostParam.Child = _gridParameters;
+        }
+
+        private void CreateAlgorithmParametersGrid()
+        {
+            _gridAlgorithmParameters = DataGridFactory.GetDataGridView(DataGridViewSelectionMode.CellSelect, DataGridViewAutoSizeRowsMode.AllCells);
+            _gridAlgorithmParameters.ScrollBars = ScrollBars.Vertical;
+
+            DataGridViewTextBoxCell cell0 = new DataGridViewTextBoxCell();
+            cell0.Style = _gridAlgorithmParameters.DefaultCellStyle;
+
+            // Parameter Name column
+            DataGridViewColumn columnName = new DataGridViewColumn();
+            columnName.CellTemplate = cell0;
+            columnName.HeaderText = "Parameter";
+            columnName.ReadOnly = true;
+            columnName.Width = 200;
+
+            _gridAlgorithmParameters.Columns.Add(columnName);
+
+            // Value column
+            DataGridViewColumn columnValue = new DataGridViewColumn();
+            columnValue.CellTemplate = cell0;
+            columnValue.HeaderText = "Value";
+            columnValue.ReadOnly = false;
+            columnValue.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+
+            _gridAlgorithmParameters.Columns.Add(columnValue);
+
+            // Add algorithm parameters rows
+            _gridAlgorithmParameters.Rows.Add("Population Size", "50");
+            _gridAlgorithmParameters.Rows.Add("Max Generations", "100");
+            _gridAlgorithmParameters.Rows.Add("Mutation Rate", "0.1");
+            _gridAlgorithmParameters.Rows.Add("Crossover Rate", "0.8");
+
+            _gridAlgorithmParameters.DataError += _gridAlgorithmParameters_DataError;
+            _gridAlgorithmParameters.CellValueChanged += _gridAlgorithmParameters_CellValueChanged;
+
+            HostAlgorithmParams.Child = _gridAlgorithmParameters;
+        }
+
+        private void _gridAlgorithmParameters_DataError(object sender, DataGridViewDataErrorEventArgs e)
+        {
+            if (_master == null)
+            {
+                return;
+            }
+            _master.SendLogMessage($"Algorithm parameters grid error: {e.ToString()}", LogMessageType.Error);
+        }
+
+        private void _gridAlgorithmParameters_CellValueChanged(object sender, DataGridViewCellEventArgs e)
+        {
+            try
+            {
+                if (_gridAlgorithmParameters.Rows.Count == 0 || e.RowIndex < 0 || e.RowIndex >= _gridAlgorithmParameters.Rows.Count)
+                {
+                    return;
+                }
+
+                var row = _gridAlgorithmParameters.Rows[e.RowIndex];
+                if (row.Cells.Count < 2)
+                {
+                    return;
+                }
+
+                string parameterName = row.Cells[0].Value?.ToString();
+                string parameterValue = row.Cells[1].Value?.ToString();
+
+                if (string.IsNullOrEmpty(parameterName) || string.IsNullOrEmpty(parameterValue))
+                {
+                    return;
+                }
+
+                var parameters = _master.AlgorithmParameters;
+
+                switch (parameterName)
+                {
+                    case "Population Size":
+                        if (int.TryParse(parameterValue, out int populationSize) && populationSize > 0)
+                        {
+                            parameters["PopulationSize"] = populationSize;
+                        }
+                        break;
+
+                    case "Max Generations":
+                        if (int.TryParse(parameterValue, out int maxGenerations) && maxGenerations > 0)
+                        {
+                            parameters["MaxGenerations"] = maxGenerations;
+                        }
+                        break;
+
+                    case "Mutation Rate":
+                        if (double.TryParse(parameterValue, out double mutationRate) && mutationRate >= 0 && mutationRate <= 1)
+                        {
+                            parameters["MutationRate"] = mutationRate;
+                        }
+                        break;
+
+                    case "Crossover Rate":
+                        if (double.TryParse(parameterValue, out double crossoverRate) && crossoverRate >= 0 && crossoverRate <= 1)
+                        {
+                            parameters["CrossoverRate"] = crossoverRate;
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _master?.SendLogMessage($"Error updating algorithm parameter: {ex.Message}", LogMessageType.Error);
+            }
         }
 
         private void _gridParameters_DataError(object sender, DataGridViewDataErrorEventArgs e)

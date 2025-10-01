@@ -39,10 +39,20 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
 
         public BotPanel GetBot(string botType, string botName)
         {
+            SendLogMessage($"AsyncBotFactory.GetBot: Starting with botType={botType}, botName={botName}", LogMessageType.System);
             BotPanel bot = null;
+            int waitCount = 0;
 
             while (true)
             {
+                waitCount++;
+                
+                // Log progress every 5 seconds
+                if (waitCount % 5000 == 0)
+                {
+                    SendLogMessage($"AsyncBotFactory.GetBot: Still waiting for bot... ({waitCount}ms), _bots.Count={_bots.Count}, _isActivate={_isActivate}", LogMessageType.System);
+                }
+                
                 for (int i = 0; i < _bots.Count; i++)
                 {
                     if (_bots[i] == null)
@@ -59,6 +69,7 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
                             _bots.RemoveAt(i);
                         }
 
+                        SendLogMessage($"AsyncBotFactory.GetBot: Found and returning bot for {botName}", LogMessageType.System);
                         return bot;
                     }
                 }
@@ -68,6 +79,7 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
 
         public void CreateNewBots(List<string> botsName, string botType, bool isScript, StartProgram startProgram)
         {
+            SendLogMessage($"AsyncBotFactory.CreateNewBots: Starting with {botsName.Count} bots, botType={botType}", LogMessageType.System);
             _botType = botType;
             _isActivate = false;
             for (int i = 0; i < _botsToStart.Count; i++)
@@ -83,6 +95,7 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
             _isScript = isScript;
             _startProgram = startProgram;
             _isActivate = true;
+            SendLogMessage($"AsyncBotFactory.CreateNewBots: Activated bot creation for {botsName.Count} bots", LogMessageType.System);
         }
 
         private bool _isActivate;

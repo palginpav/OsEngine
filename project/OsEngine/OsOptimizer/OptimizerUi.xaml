@@ -15,6 +15,8 @@
             <Grid Name="GridThreadsProgress" Margin="10,29,326,10" MinHeight="10"/>
             <ComboBox Name="ComboBoxThreadsCount" HorizontalAlignment="Right" Margin="0,0,186,19" VerticalAlignment="Bottom" Width="135" Height="21"/>
             <Label Name="Label8" Content="Threads" HorizontalAlignment="Right" Margin="0,0,224,41" VerticalAlignment="Bottom"/>
+            <ComboBox Name="ComboBoxAlgorithm" HorizontalAlignment="Right" Margin="0,0,186,45" VerticalAlignment="Bottom" Width="135" Height="21" SelectionChanged="ComboBoxAlgorithm_SelectionChanged"/>
+            <Label Name="LabelAlgorithm" Content="Algorithm" HorizontalAlignment="Right" Margin="0,0,224,67" VerticalAlignment="Bottom"/>
             <Button Name="ButtonResults" Content="Results" Margin="0,52,24,0" VerticalAlignment="Top" Click="ButtonResults_Click" HorizontalAlignment="Right" Width="148"/>
             <Label Name="LabelTimeToEnd" Content="Time to end" Foreground="AliceBlue" HorizontalAlignment="Left" Margin="10,24,0,0" VerticalAlignment="Top" Height="19" Width="229" FontSize="12"/>
         </Grid>
@@ -43,12 +45,29 @@
                     </Grid>
                 </TabItem>
                 <TabItem Name="TabItemParameters" Header="Parameters" FontSize="14" Width="120">
-                    <Grid Name="GridParametrs" >
-                        <WindowsFormsHost Name="HostParam"  Foreground="Black" Margin="10,38,10,26"/>
-                        <Label Name="Label17" Content="Parameters table" HorizontalAlignment="Left" Margin="10,8,0,0" VerticalAlignment="Top"/>
+                    <Grid Name="GridParametrs">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/> <!-- Algorithm Parameters Label -->
+                            <RowDefinition Height="120"/> <!-- Algorithm Parameters Grid -->
+                            <RowDefinition Height="Auto"/> <!-- Strategy Parameters Label -->
+                            <RowDefinition Height="*"/> <!-- Strategy Parameters Grid -->
+                            <RowDefinition Height="Auto"/> <!-- Button -->
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Algorithm Parameters Section -->
+                        <Label Name="LabelAlgorithmParams" Content="Algorithm Parameters" Grid.Row="0" HorizontalAlignment="Left" Margin="10,8,0,5" VerticalAlignment="Top" FontWeight="Bold"/>
+                        <WindowsFormsHost Name="HostAlgorithmParams" Grid.Row="1" Foreground="Black" Margin="10,0,10,0"/>
+                        
+                        <!-- Strategy Parameters Section -->
+                        <Label Name="Label17" Content="Parameters table" Grid.Row="2" HorizontalAlignment="Left" Margin="10,5,0,5" VerticalAlignment="Top"/>
+                        <WindowsFormsHost Name="HostParam" Grid.Row="3" Foreground="Black" Margin="10,0,10,0"/>
+                        
+                        <!-- Button -->
+                        <Button Name="ButtonSetStandardParameters" Content="Set Standard Parameters" Grid.Row="4" HorizontalAlignment="Left" Margin="10,5,0,5" VerticalAlignment="Top" Width="260" Click="ButtonSetStandardParameters_Click"/>
+                        
+                        <!-- Iteration count labels (positioned absolutely) -->
                         <Label Name="LabelIteartionCount" Content="Iteration count: " HorizontalAlignment="Right" Margin="0,10,122,0" VerticalAlignment="Top"/>
                         <Label Name="LabelIteartionCountNumber" Content="unknown" HorizontalAlignment="Right" Margin="0,10,56,0" VerticalAlignment="Top"/>
-                        <Button Name="ButtonSetStandardParameters" Content="Set Standard Parameters" HorizontalAlignment="Left" Margin="10,0,0,0" VerticalAlignment="Bottom" Width="260" Click="ButtonSetStandardParameters_Click"/>
                     </Grid>
                 </TabItem>
                 <TabItem Name="TabItemFazes" Header="Fazes" FontSize="14" Width="120">

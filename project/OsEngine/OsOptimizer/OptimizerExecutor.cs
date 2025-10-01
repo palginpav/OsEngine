@@ -662,15 +662,22 @@ namespace OsEngine.OsOptimizer
         private void StartNewBot(List<IIStrategyParameter> parameters, List<IIStrategyParameter> parametersOptimized,
             OptimizerFazeReport report, string botName)
         {
+            SendLogMessage($"StartNewBot: Starting with botName={botName}", LogMessageType.System);
+            
+            SendLogMessage("StartNewBot: Creating new server", LogMessageType.System);
             OptimizerServer server = CreateNewServer(report, true);
+            SendLogMessage($"StartNewBot: Created server {server?.NumberServer}", LogMessageType.System);
 
             // Check if bot name starts with a number, if not prepend server number
             if (string.IsNullOrEmpty(botName) || !char.IsDigit(botName[0]))
             {
                 botName = server.NumberServer + botName;
+                SendLogMessage($"StartNewBot: Updated botName to {botName}", LogMessageType.System);
             }
 
+            SendLogMessage("StartNewBot: Creating new bot", LogMessageType.System);
             BotPanel bot = CreateNewBot(botName, parameters, parametersOptimized, server, StartProgram.IsOsOptimizer);
+            SendLogMessage($"StartNewBot: Created bot, IsConnected={bot?.IsConnected}", LogMessageType.System);
 
             if (bot == null)
             {
@@ -680,16 +687,25 @@ namespace OsEngine.OsOptimizer
 
             // wait for the robot to connect to its data server
             // ждём пока робот подключиться к своему серверу данных
+            SendLogMessage("StartNewBot: Starting bot connection wait loop", LogMessageType.System);
 
             DateTime timeStartWaiting = DateTime.Now;
+            int waitCount = 0;
 
             while (bot.IsConnected == false)
             {
                 Thread.Sleep(1);
+                waitCount++;
+
+                // Log progress every 5 seconds
+                if (waitCount % 5000 == 0)
+                {
+                    SendLogMessage($"StartNewBot: Still waiting for bot connection... ({waitCount}ms), bot.IsConnected={bot.IsConnected}", LogMessageType.System);
+                }
 
                 if (timeStartWaiting.AddSeconds(2000) < DateTime.Now)
                 {
-
+                    SendLogMessage($"StartNewBot: Bot connection timeout after 2000 seconds, bot.IsConnected={bot.IsConnected}", LogMessageType.Error);
                     SendLogMessage(
                         OsLocalization.Optimizer.Message10,
                         LogMessageType.Error);
@@ -697,14 +713,18 @@ namespace OsEngine.OsOptimizer
                 }
             }
 
+            SendLogMessage("StartNewBot: Bot connected successfully, adding to test list", LogMessageType.System);
             lock (_serverRemoveLocker)
             {
                 _botsInTest.Add(bot);
             }
 
+            SendLogMessage("StartNewBot: Sleeping 200ms before starting test", LogMessageType.System);
             Thread.Sleep(200);
 
+            SendLogMessage("StartNewBot: Starting server test", LogMessageType.System);
             server.TestingStart();
+            SendLogMessage("StartNewBot: Server test started, method completed", LogMessageType.System);
         }
 
         private List<BotPanel> _botsInTest = new List<BotPanel>();
@@ -786,19 +806,29 @@ namespace OsEngine.OsOptimizer
             List<IIStrategyParameter> parametersOptimized,
             OptimizerServer server, StartProgram regime)
         {
+            SendLogMessage($"CreateNewBot: Starting with botName={botName}, strategyName={_master.StrategyName}", LogMessageType.System);
             BotPanel bot = null;
 
             try
             {
-                bot = _asyncBotFactory.GetBot(_master.StrategyName, botName);
+            SendLogMessage("CreateNewBot: Creating new bot via AsyncBotFactory", LogMessageType.System);
+            // First, tell the factory to create the bot
+            List<string> botNames = new List<string> { botName };
+            _asyncBotFactory.CreateNewBots(botNames, _master.StrategyName, _master.IsScript, StartProgram.IsOsOptimizer);
+            
+            SendLogMessage("CreateNewBot: Getting bot from AsyncBotFactory", LogMessageType.System);
+            bot = _asyncBotFactory.GetBot(_master.StrategyName, botName);
+            SendLogMessage($"CreateNewBot: Got bot, Parameters.Count={bot?.Parameters?.Count}", LogMessageType.System);
 
                 if (bot.Parameters.Count != parameters.Count)
                 {
+                    SendLogMessage($"CreateNewBot: Parameter count mismatch - bot has {bot.Parameters.Count}, expected {parameters.Count}", LogMessageType.Error);
                     return null;
                 }
             }
             catch (Exception ex)
             {
+                SendLogMessage($"CreateNewBot: Exception getting bot: {ex.Message}", LogMessageType.Error);
                 SendLogMessage(ex.ToString(), LogMessageType.Error);
                 return null;
             }
@@ -939,10 +969,12 @@ namespace OsEngine.OsOptimizer
                     }
                 }
 
+                SendLogMessage($"CreateNewBot: Successfully configured bot, IsConnected={bot?.IsConnected}", LogMessageType.System);
                 return bot;
             }
             catch (Exception ex)
             {
+                SendLogMessage($"CreateNewBot: Exception configuring bot: {ex.Message}", LogMessageType.Error);
                 SendLogMessage(ex.ToString(), LogMessageType.Error);
                 return null;
             }
@@ -1169,6 +1201,7 @@ namespace OsEngine.OsOptimizer
 
         private void server_TestingEndEvent(int serverNum, TimeSpan testTime)
         {
+            SendLogMessage($"server_TestingEndEvent: Server {serverNum} test completed, ReportsToFazes.Count={ReportsToFazes.Count}", LogMessageType.System);
             TestingProgressChangeEvent?.Invoke(100, 100, serverNum);
             _countAllServersEndTest++;
             PrimeProgressChangeEvent?.Invoke(_countAllServersEndTest, _countAllServersMax);
@@ -1203,9 +1236,13 @@ namespace OsEngine.OsOptimizer
                     }
                 }
 
-                if (bot != null)
+                if (bot != null && ReportsToFazes.Count > 0)
                 {
                     ReportsToFazes[ReportsToFazes.Count - 1].Load(bot);
+                }
+                else if (bot != null && ReportsToFazes.Count == 0)
+                {
+                    SendLogMessage($"server_TestingEndEvent: No reports available to load bot results for server {serverNum}", LogMessageType.Error);
                 }
 
                 for (int i = 0; i < _servers.Count; i++)

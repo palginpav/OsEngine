@@ -21,6 +21,7 @@ using System.Globalization;
 using OsEngine.OsTrader.Panels.Tab;
 using OsEngine.Market;
 using OsEngine.Performance;
+using OsEngine.OsOptimizer.Algorithms;
 
 namespace OsEngine.OsOptimizer
 {
@@ -59,6 +60,10 @@ namespace OsEngine.OsOptimizer
             _filterProfitFactorIsOn = false;
 
             _percentOnFiltration = 30;
+
+            // Initialize algorithm selection
+            _selectedAlgorithm = AlgorithmFactory.AlgorithmType.BruteForce; // Default to brute force
+            _algorithmParameters = new Dictionary<string, object>();
 
             Load();
             LoadClearingInfo();
@@ -120,6 +125,15 @@ namespace OsEngine.OsOptimizer
                     writer.WriteLine(_timeStart.ToString(CultureInfo.InvariantCulture));
                     writer.WriteLine(_timeEnd.ToString(CultureInfo.InvariantCulture));
                     writer.WriteLine(_percentOnFiltration);
+                    
+                    // Save algorithm selection
+                    writer.WriteLine(_selectedAlgorithm.ToString());
+                    writer.WriteLine(_algorithmParameters.Count);
+                    foreach (var kvp in _algorithmParameters)
+                    {
+                        writer.WriteLine(kvp.Key);
+                        writer.WriteLine(kvp.Value?.ToString() ?? "");
+                    }
 
                     writer.WriteLine(_filterDealsCountValue);
                     writer.WriteLine(_filterDealsCountIsOn);
@@ -166,6 +180,21 @@ namespace OsEngine.OsOptimizer
                     _timeStart = Convert.ToDateTime(reader.ReadLine(), CultureInfo.InvariantCulture);
                     _timeEnd = Convert.ToDateTime(reader.ReadLine(), CultureInfo.InvariantCulture);
                     _percentOnFiltration = reader.ReadLine().ToDecimal();
+                    
+                    // Load algorithm selection
+                    if (Enum.TryParse<AlgorithmFactory.AlgorithmType>(reader.ReadLine(), out var algorithmType))
+                    {
+                        _selectedAlgorithm = algorithmType;
+                    }
+                    
+                    var paramCount = Convert.ToInt32(reader.ReadLine());
+                    _algorithmParameters = new Dictionary<string, object>();
+                    for (int i = 0; i < paramCount; i++)
+                    {
+                        var key = reader.ReadLine();
+                        var value = reader.ReadLine();
+                        _algorithmParameters[key] = value;
+                    }
 
                     _filterDealsCountValue = Convert.ToInt32(reader.ReadLine());
                     _filterDealsCountIsOn = Convert.ToBoolean(reader.ReadLine());
@@ -1373,9 +1402,100 @@ namespace OsEngine.OsOptimizer
 
         #endregion
 
+        #region Algorithm selection
+
+        /// <summary>
+        /// Selected optimization algorithm.
+        /// Выбранный алгоритм оптимизации.
+        /// </summary>
+        public AlgorithmFactory.AlgorithmType SelectedAlgorithm
+        {
+            get { return _selectedAlgorithm; }
+            set
+            {
+                _selectedAlgorithm = value;
+                Save();
+                
+                // Update algorithm parameters to defaults when algorithm changes
+                var algorithmInfo = AlgorithmFactory.GetAlgorithmInfo(value);
+                _algorithmParameters = new Dictionary<string, object>(algorithmInfo.DefaultParameters);
+                
+                SendLogMessage($"Algorithm changed to: {algorithmInfo.Name}", LogMessageType.System);
+            }
+        }
+
+        /// <summary>
+        /// Algorithm-specific parameters.
+        /// Специфичные для алгоритма параметры.
+        /// </summary>
+        public Dictionary<string, object> AlgorithmParameters
+        {
+            get { return _algorithmParameters; }
+            set
+            {
+                _algorithmParameters = value ?? new Dictionary<string, object>();
+                Save();
+            }
+        }
+
+        /// <summary>
+        /// Get information about the selected algorithm.
+        /// Получить информацию о выбранном алгоритме.
+        /// </summary>
+        public AlgorithmInfo SelectedAlgorithmInfo => AlgorithmFactory.GetAlgorithmInfo(_selectedAlgorithm);
+
+        /// <summary>
+        /// Get all available algorithms.
+        /// Получить все доступные алгоритмы.
+        /// </summary>
+        public List<AlgorithmFactory.AlgorithmType> AvailableAlgorithms => AlgorithmFactory.GetAvailableAlgorithms();
+
+        /// <summary>
+        /// Get recommended algorithm for current parameter space.
+        /// Получить рекомендуемый алгоритм для текущего пространства параметров.
+        /// </summary>
+        public AlgorithmFactory.AlgorithmType GetRecommendedAlgorithm()
+        {
+            if (_parameters == null || _parametersOn == null)
+                return AlgorithmFactory.AlgorithmType.BruteForce;
+
+            // Calculate estimated combinations
+            long estimatedCombinations = _optimizerExecutor.BotCountOneFaze(_parameters, _parametersOn);
+            
+            // Get parameter types
+            var parameterTypes = new List<string>();
+            for (int i = 0; i < _parameters.Count; i++)
+            {
+                if (i < _parametersOn.Count && _parametersOn[i])
+                {
+                    parameterTypes.Add(_parameters[i].Type.ToString());
+                }
+            }
+
+            return AlgorithmFactory.GetRecommendedAlgorithm(
+                parameterTypes.Count, 
+                estimatedCombinations, 
+                parameterTypes, 
+                true); // Assume multi-objective for now
+        }
+
+        #endregion
+
         #region Start optimization algorithm
 
         public OptimizerExecutor _optimizerExecutor;
+        
+        /// <summary>
+        /// Selected optimization algorithm.
+        /// Выбранный алгоритм оптимизации.
+        /// </summary>
+        private AlgorithmFactory.AlgorithmType _selectedAlgorithm;
+        
+        /// <summary>
+        /// Algorithm-specific parameters.
+        /// Специфичные для алгоритма параметры.
+        /// </summary>
+        private Dictionary<string, object> _algorithmParameters;
 
         public bool Start()
         {
@@ -1384,12 +1504,124 @@ namespace OsEngine.OsOptimizer
                 return false;
             }
 
+            // Check if we should use genetic algorithm
+            if (_selectedAlgorithm != AlgorithmFactory.AlgorithmType.BruteForce)
+            {
+                return StartGeneticOptimization();
+            }
+
+            // Use traditional brute force optimization
             if (_optimizerExecutor.Start(_parametersOn, _parameters))
             {
                 ProgressBarStatuses = new List<ProgressBarStatus>();
                 PrimeProgressBarStatus = new ProgressBarStatus();
             }
             return true;
+        }
+
+        /// <summary>
+        /// Start genetic algorithm optimization.
+        /// Запустить оптимизацию генетическим алгоритмом.
+        /// </summary>
+        private bool StartGeneticOptimization()
+        {
+            try
+            {
+                // Create the selected algorithm
+                var algorithm = AlgorithmFactory.CreateAlgorithm(_selectedAlgorithm);
+                
+                // Set algorithm parameters
+                algorithm.SetAlgorithmParameters(_algorithmParameters);
+                
+                // Set up the algorithm with optimizer executor
+                if (algorithm is StandardGeneticAlgorithm ga)
+                {
+                    ga.SetOptimizerExecutor(_optimizerExecutor, this);
+                }
+                
+                // Subscribe to progress events
+                algorithm.ProgressUpdated += OnAlgorithmProgressUpdated;
+                algorithm.OptimizationCompleted += OnAlgorithmOptimizationCompleted;
+                
+                // Start optimization in background
+                var cancellationToken = new CancellationTokenSource();
+                
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var results = algorithm.Optimize(
+                            _parameters,
+                            _parametersOn,
+                            Fazes[0], // Use first phase for now
+                            (int)_algorithmParameters.GetValueOrDefault("MaxGenerations", 100),
+                            (int)_algorithmParameters.GetValueOrDefault("PopulationSize", 50),
+                            cancellationToken.Token);
+                        
+                        // Results are handled in OnAlgorithmOptimizationCompleted
+                    }
+                    catch (Exception ex)
+                    {
+                        SendLogMessage($"Genetic algorithm error: {ex.Message}", LogMessageType.Error);
+                    }
+                }, cancellationToken.Token);
+                
+                ProgressBarStatuses = new List<ProgressBarStatus>();
+                PrimeProgressBarStatus = new ProgressBarStatus();
+                
+                SendLogMessage($"Started {SelectedAlgorithmInfo.Name} optimization", LogMessageType.System);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"Failed to start genetic optimization: {ex.Message}", LogMessageType.Error);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Handle algorithm progress updates.
+        /// Обработать обновления прогресса алгоритма.
+        /// </summary>
+        private void OnAlgorithmProgressUpdated(int generation, double fitness, string message)
+        {
+            // Update progress bars
+            if (PrimeProgressBarStatus != null)
+            {
+                PrimeProgressBarStatus.CurrentValue = generation;
+                PrimeProgressBarStatus.MaxValue = (int)_algorithmParameters.GetValueOrDefault("MaxGenerations", 100);
+            }
+            
+            // Log progress
+            SendLogMessage($"Generation {generation}: {message}", LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Handle algorithm completion.
+        /// Обработать завершение алгоритма.
+        /// </summary>
+        private void OnAlgorithmOptimizationCompleted(List<OptimizerReport> results)
+        {
+            try
+            {
+                // Create optimizer phase report
+                var phaseReport = new OptimizerFazeReport
+                {
+                    Faze = Fazes[0] // Use first phase
+                };
+                
+                // Add results to phase report
+                phaseReport.Reports.AddRange(results);
+                
+                // Trigger test ready event
+                TestReadyEvent?.Invoke(new List<OptimizerFazeReport> { phaseReport });
+                
+                SendLogMessage($"Genetic optimization completed with {results.Count} results", LogMessageType.System);
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"Error handling optimization completion: {ex.Message}", LogMessageType.Error);
+            }
         }
 
         public void Stop()
