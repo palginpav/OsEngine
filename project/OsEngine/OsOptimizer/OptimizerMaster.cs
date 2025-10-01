@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms.Integration;
 using OsEngine.Entity;
 using OsEngine.Language;
@@ -80,6 +81,8 @@ namespace OsEngine.OsOptimizer
             _optimizerExecutor.TestReadyEvent += _optimizerExecutor_TestReadyEvent;
             _optimizerExecutor.NeedToMoveUiToEvent += _optimizerExecutor_NeedToMoveUiToEvent;
             _optimizerExecutor.TimeToEndChangeEvent += _optimizerExecutor_TimeToEndChangeEvent;
+            
+            _currentAlgorithm = null;
             ProgressBarStatuses = new List<ProgressBarStatus>();
             PrimeProgressBarStatus = new ProgressBarStatus();
         }
@@ -193,7 +196,26 @@ namespace OsEngine.OsOptimizer
                     {
                         var key = reader.ReadLine();
                         var value = reader.ReadLine();
-                        _algorithmParameters[key] = value;
+                        
+                        // Convert string values back to their proper types
+                        object convertedValue = value;
+                        if (key == "PopulationSize" || key == "MaxGenerations" || key == "EliteCount" || key == "TournamentSize" || key == "MaxStagnationGenerations")
+                        {
+                            if (int.TryParse(value, out int intValue))
+                                convertedValue = intValue;
+                        }
+                        else if (key == "CrossoverRate" || key == "MutationRate" || key == "MutationStrength" || key == "ConvergenceThreshold")
+                        {
+                            if (double.TryParse(value, out double doubleValue))
+                                convertedValue = doubleValue;
+                        }
+                        else if (key == "SelectionMethod")
+                        {
+                            if (Enum.TryParse<SelectionMethod>(value, out var selectionMethod))
+                                convertedValue = selectionMethod;
+                        }
+                        
+                        _algorithmParameters[key] = convertedValue;
                     }
 
                     _filterDealsCountValue = Convert.ToInt32(reader.ReadLine());
@@ -262,25 +284,63 @@ namespace OsEngine.OsOptimizer
 
         private void _optimizerExecutor_TestingProgressChangeEvent(int curVal, int maxVal, int numServer)
         {
-            ProgressBarStatus status;
             try
             {
-                status = ProgressBarStatuses.Find(st => st.Num == numServer);
+                // Check if ProgressBarStatuses is initialized
+                if (ProgressBarStatuses == null)
+                {
+                    return;
+                }
+                
+                ProgressBarStatus status = null;
+                
+                // Safely find the status
+                try
+                {
+                    status = ProgressBarStatuses.Find(st => st != null && st.Num == numServer);
+                }
+                catch
+                {
+                    // If Find fails, try to continue without crashing
+                    return;
+                }
+
+                if (status == null)
+                {
+                    status = new ProgressBarStatus();
+                    status.Num = numServer;
+                    
+                    // Check if ProgressBarStatuses is still initialized before adding
+                    if (ProgressBarStatuses != null)
+                    {
+                        try
+                        {
+                            ProgressBarStatuses.Add(status);
+                        }
+                        catch
+                        {
+                            // If Add fails, just return without crashing
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
+                // Safely update the status
+                if (status != null)
+                {
+                    status.CurrentValue = curVal;
+                    status.MaxValue = maxVal;
+                }
             }
             catch
             {
+                // If anything fails, just return without crashing
                 return;
             }
-
-            if (status == null)
-            {
-                status = new ProgressBarStatus();
-                status.Num = numServer;
-                ProgressBarStatuses.Add(status);
-            }
-
-            status.CurrentValue = curVal;
-            status.MaxValue = maxVal;
         }
 
         public List<ProgressBarStatus> ProgressBarStatuses;
@@ -1416,9 +1476,20 @@ namespace OsEngine.OsOptimizer
                 _selectedAlgorithm = value;
                 Save();
                 
-                // Update algorithm parameters to defaults when algorithm changes
+                // Preserve existing parameters when algorithm changes, only add missing defaults
                 var algorithmInfo = AlgorithmFactory.GetAlgorithmInfo(value);
-                _algorithmParameters = new Dictionary<string, object>(algorithmInfo.DefaultParameters);
+                var newParameters = new Dictionary<string, object>(_algorithmParameters);
+                
+                // Add any missing default parameters
+                foreach (var defaultParam in algorithmInfo.DefaultParameters)
+                {
+                    if (!newParameters.ContainsKey(defaultParam.Key))
+                    {
+                        newParameters[defaultParam.Key] = defaultParam.Value;
+                    }
+                }
+                
+                _algorithmParameters = newParameters;
                 
                 SendLogMessage($"Algorithm changed to: {algorithmInfo.Name}", LogMessageType.System);
             }
@@ -1504,13 +1575,21 @@ namespace OsEngine.OsOptimizer
                 return false;
             }
 
+            SendLogMessage($"OptimizerMaster.Start: Selected algorithm: {_selectedAlgorithm}", LogMessageType.System);
+            SendLogMessage($"OptimizerMaster.Start: BruteForce algorithm type: {AlgorithmFactory.AlgorithmType.BruteForce}", LogMessageType.System);
+            SendLogMessage($"OptimizerMaster.Start: Algorithm comparison: {_selectedAlgorithm != AlgorithmFactory.AlgorithmType.BruteForce}", LogMessageType.System);
+            SendLogMessage($"OptimizerMaster.Start: Algorithm parameters count: {_algorithmParameters?.Count ?? 0}", LogMessageType.System);
+            SendLogMessage($"OptimizerMaster.Start: Available algorithms: {string.Join(", ", AvailableAlgorithms)}", LogMessageType.System);
+
             // Check if we should use genetic algorithm
             if (_selectedAlgorithm != AlgorithmFactory.AlgorithmType.BruteForce)
             {
+                SendLogMessage($"OptimizerMaster.Start: Using genetic algorithm optimization", LogMessageType.System);
                 return StartGeneticOptimization();
             }
 
             // Use traditional brute force optimization
+            SendLogMessage($"OptimizerMaster.Start: Using brute force optimization", LogMessageType.System);
             if (_optimizerExecutor.Start(_parametersOn, _parameters))
             {
                 ProgressBarStatuses = new List<ProgressBarStatus>();
@@ -1527,8 +1606,10 @@ namespace OsEngine.OsOptimizer
         {
             try
             {
+                
                 // Create the selected algorithm
                 var algorithm = AlgorithmFactory.CreateAlgorithm(_selectedAlgorithm);
+                _currentAlgorithm = algorithm; // Store the current algorithm for stop functionality
                 
                 // Set algorithm parameters
                 algorithm.SetAlgorithmParameters(_algorithmParameters);
@@ -1550,12 +1631,15 @@ namespace OsEngine.OsOptimizer
                 {
                     try
                     {
+                        var maxGenerations = (int)_algorithmParameters.GetValueOrDefault("MaxGenerations", 100);
+                        var populationSize = (int)_algorithmParameters.GetValueOrDefault("PopulationSize", 50);
+                        
                         var results = algorithm.Optimize(
                             _parameters,
                             _parametersOn,
                             Fazes[0], // Use first phase for now
-                            (int)_algorithmParameters.GetValueOrDefault("MaxGenerations", 100),
-                            (int)_algorithmParameters.GetValueOrDefault("PopulationSize", 50),
+                            maxGenerations,
+                            populationSize,
                             cancellationToken.Token);
                         
                         // Results are handled in OnAlgorithmOptimizationCompleted
@@ -1604,19 +1688,71 @@ namespace OsEngine.OsOptimizer
         {
             try
             {
-                // Create optimizer phase report
-                var phaseReport = new OptimizerFazeReport
-                {
-                    Faze = Fazes[0] // Use first phase
-                };
+                var fazeReports = new List<OptimizerFazeReport>();
                 
-                // Add results to phase report
-                phaseReport.Reports.AddRange(results);
+                // Separate InSample and OutSample results
+                var inSampleResults = new List<OptimizerReport>();
+                var outSampleResults = new List<OptimizerReport>();
+                
+                foreach (var result in results)
+                {
+                    // Check if this is an OutSample result by looking at the bot name
+                    if (result.BotName.Contains("OutOfSample") || result.BotName.Contains("OutSample"))
+                    {
+                        outSampleResults.Add(result);
+                    }
+                    else
+                    {
+                        inSampleResults.Add(result);
+                    }
+                }
+                
+                // Create InSample phase report
+                if (inSampleResults.Count > 0)
+                {
+                    var inSampleFaze = Fazes.FirstOrDefault(f => f.TypeFaze == OptimizerFazeType.InSample);
+                    if (inSampleFaze != null)
+                    {
+                        var inSamplePhaseReport = new OptimizerFazeReport
+                        {
+                            Faze = inSampleFaze
+                        };
+                        inSamplePhaseReport.Reports.AddRange(inSampleResults);
+                        fazeReports.Add(inSamplePhaseReport);
+                    }
+                }
+                
+                // Create OutSample phase report
+                if (outSampleResults.Count > 0)
+                {
+                    var outSampleFaze = Fazes.FirstOrDefault(f => f.TypeFaze == OptimizerFazeType.OutOfSample);
+                    if (outSampleFaze != null)
+                    {
+                        var outSamplePhaseReport = new OptimizerFazeReport
+                        {
+                            Faze = outSampleFaze
+                        };
+                        outSamplePhaseReport.Reports.AddRange(outSampleResults);
+                        fazeReports.Add(outSamplePhaseReport);
+                    }
+                }
+                
+                // If no results were categorized, fall back to original behavior
+                if (fazeReports.Count == 0 && results.Count > 0)
+                {
+                    var phaseReport = new OptimizerFazeReport
+                    {
+                        Faze = Fazes[0] // Use first phase
+                    };
+                    phaseReport.Reports.AddRange(results);
+                    fazeReports.Add(phaseReport);
+                }
                 
                 // Trigger test ready event
-                TestReadyEvent?.Invoke(new List<OptimizerFazeReport> { phaseReport });
+                TestReadyEvent?.Invoke(fazeReports);
                 
-                SendLogMessage($"Genetic optimization completed with {results.Count} results", LogMessageType.System);
+                // Clear the current algorithm reference since it has completed
+                _currentAlgorithm = null;
             }
             catch (Exception ex)
             {
@@ -1626,7 +1762,24 @@ namespace OsEngine.OsOptimizer
 
         public void Stop()
         {
-            _optimizerExecutor.Stop();
+            // Check if the algorithm has already completed
+            if (_currentAlgorithm == null)
+            {
+                SendLogMessage("Stop: No algorithm is currently running", LogMessageType.System);
+                return;
+            }
+            
+            // Stop the current algorithm if it's running
+            _currentAlgorithm.Stop();
+            
+            // Only stop the executor if it's actually running
+            if (_optimizerExecutor != null)
+            {
+                _optimizerExecutor.Stop();
+            }
+            
+            // Clear the current algorithm reference
+            _currentAlgorithm = null;
         }
 
         private bool CheckReadyData()
@@ -1938,6 +2091,12 @@ namespace OsEngine.OsOptimizer
         }
 
         public event Action<string, LogMessageType> LogMessageEvent;
+
+        #endregion
+
+        #region Fields
+
+        private IOptimizationAlgorithm _currentAlgorithm;
 
         #endregion
     }

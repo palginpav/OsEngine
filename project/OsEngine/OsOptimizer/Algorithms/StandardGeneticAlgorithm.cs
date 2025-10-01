@@ -1,105 +1,92 @@
-/*
- * Your rights to use code governed by this license https://github.com/AlexWan/OsEngine/blob/master/LICENSE
- * Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
-*/
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using OsEngine.Entity;
-using OsEngine.OsTrader.Panels;
-using OsEngine.Market.Servers.Optimizer;
 using OsEngine.Logging;
+using OsEngine.Market;
+using OsEngine.Market.Servers.Optimizer;
+using OsEngine.OsOptimizer.OptEntity;
+using OsEngine.OsTrader.Panels;
+using OsEngine.OsTrader.Panels.Tab;
+using OsEngine.OsTrader.Panels.Tab.Internal;
 
 namespace OsEngine.OsOptimizer.Algorithms
 {
     /// <summary>
-    /// Standard Genetic Algorithm implementation for OsEngine optimizer.
-    /// Стандартная реализация генетического алгоритма для оптимизатора OsEngine.
+    /// Standard Genetic Algorithm implementation for strategy optimization.
+    /// Стандартная реализация генетического алгоритма для оптимизации стратегий.
     /// </summary>
-    public class StandardGeneticAlgorithm : GeneticAlgorithmBase
+    public class StandardGeneticAlgorithm : IOptimizationAlgorithm, IDisposable
     {
-        /// <summary>
-        /// Reference to the optimizer executor for running strategy tests.
-        /// Ссылка на исполнитель оптимизатора для запуска тестов стратегий.
-        /// </summary>
+        #region Fields
+
         private OptimizerExecutor _optimizerExecutor;
-
-        /// <summary>
-        /// Reference to the optimizer master for accessing configuration.
-        /// Ссылка на мастер оптимизатора для доступа к конфигурации.
-        /// </summary>
         private OptimizerMaster _optimizerMaster;
-        
-        // Failure tracking for diagnostics
-        private int _totalEvaluations = 0;
-        private int _successfulEvaluations = 0;
-        private int _timeoutFailures = 0;
-        private int _parameterFailures = 0;
-        private int _connectionFailures = 0;
-        private int _otherFailures = 0;
+        private Random _random;
+        private Population _population;
+        private int _currentFaze;
+        private int _zeroTradeBots;
+        private OptimizerFaze _currentOptimizerFaze;
+        private bool _needToStop;
+        private int _threadsCount;
+        private int _originalPopulationSize;
+
+        #endregion
+
+        #region Constructor
 
         /// <summary>
-        /// Current optimization phase.
-        /// Текущая фаза оптимизации.
-        /// </summary>
-        private OptimizerFaze _currentFaze;
-
-        /// <summary>
-        /// Strategy parameters being optimized.
-        /// Параметры стратегии, которые оптимизируются.
-        /// </summary>
-        private List<IIStrategyParameter> _parameters;
-
-        /// <summary>
-        /// Which parameters to optimize.
-        /// Какие параметры оптимизировать.
-        /// </summary>
-        private List<bool> _parametersToOptimize;
-
-        /// <summary>
-        /// Initialize the standard genetic algorithm.
+        /// Initialize the Standard Genetic Algorithm.
         /// Инициализировать стандартный генетический алгоритм.
         /// </summary>
         public StandardGeneticAlgorithm()
         {
-            // Set algorithm-specific default parameters
-            AlgorithmParameters["SelectionMethod"] = SelectionMethod.Tournament;
-            AlgorithmParameters["TournamentSize"] = 3;
-            AlgorithmParameters["EliteCount"] = 5;
-            AlgorithmParameters["CrossoverRate"] = 0.8;
-            AlgorithmParameters["MutationRate"] = 0.1;
-            AlgorithmParameters["MutationStrength"] = 0.1;
-            AlgorithmParameters["ConvergenceThreshold"] = 0.001;
-            AlgorithmParameters["MaxStagnationGenerations"] = 20;
+            _random = new Random();
+            _zeroTradeBots = 0;
         }
+
+        #endregion
+
+        #region IOptimizationAlgorithm Implementation
 
         /// <summary>
         /// Algorithm name.
         /// Название алгоритма.
         /// </summary>
-        public override string AlgorithmName => "Standard Genetic Algorithm";
+        public string AlgorithmName => "Standard Genetic Algorithm";
 
         /// <summary>
         /// Algorithm description.
         /// Описание алгоритма.
         /// </summary>
-        public override string AlgorithmDescription => 
-            "Standard genetic algorithm with tournament selection, crossover, and mutation. " +
-            "Suitable for most parameter optimization tasks with good convergence properties.";
+        public string AlgorithmDescription => "Standard genetic algorithm with selection, crossover, and mutation operations";
 
         /// <summary>
         /// Whether this algorithm supports multi-objective optimization.
         /// Поддерживает ли этот алгоритм многоцелевую оптимизацию.
         /// </summary>
-        public override bool SupportsMultiObjective => true;
+        public bool SupportsMultiObjective => false;
 
         /// <summary>
-        /// Set the optimizer executor and master for running strategy tests.
-        /// Установить исполнитель и мастер оптимизатора для запуска тестов стратегий.
+        /// Default algorithm parameters.
+        /// Параметры алгоритма по умолчанию.
+        /// </summary>
+        public Dictionary<string, object> DefaultParameters => new Dictionary<string, object>
+        {
+            { "PopulationSize", 50 },
+            { "MaxGenerations", 100 },
+            { "CrossoverRate", 0.8 },
+            { "MutationRate", 0.1 },
+            { "ElitismCount", 5 },
+            { "SelectionMethod", SelectionMethod.Tournament },
+            { "TournamentSize", 3 }
+        };
+
+        /// <summary>
+        /// Set the optimizer executor for bot testing.
+        /// Установить исполнитель оптимизатора для тестирования ботов.
         /// </summary>
         /// <param name="executor">Optimizer executor / Исполнитель оптимизатора</param>
         /// <param name="master">Optimizer master / Мастер оптимизатора</param>
@@ -110,159 +97,357 @@ namespace OsEngine.OsOptimizer.Algorithms
         }
 
         /// <summary>
-        /// Run the genetic algorithm optimization.
-        /// Запустить оптимизацию генетическим алгоритмом.
+        /// Get algorithm-specific parameters that can be configured.
+        /// Получить специфичные для алгоритма параметры, которые можно настроить.
         /// </summary>
-        protected override List<OptimizerReport> RunOptimization(
+        /// <returns>Dictionary of parameter names and their default values / Словарь имен параметров и их значений по умолчанию</returns>
+        public Dictionary<string, object> GetAlgorithmParameters()
+        {
+            return new Dictionary<string, object>(DefaultParameters);
+        }
+
+        /// <summary>
+        /// Set algorithm parameters.
+        /// Установить параметры алгоритма.
+        /// </summary>
+        /// <param name="parameters">Algorithm parameters / Параметры алгоритма</param>
+        public void SetAlgorithmParameters(Dictionary<string, object> parameters)
+        {
+            // Parameters are stored in the population when it's created
+        }
+
+        /// <summary>
+        /// Stop the optimization process.
+        /// Остановить процесс оптимизации.
+        /// </summary>
+        public void Stop()
+        {
+            _needToStop = true;
+            _optimizerMaster?.SendLogMessage("StandardGeneticAlgorithm: Stop requested", LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Event fired when optimization progress is updated.
+        /// Событие, срабатывающее при обновлении прогресса оптимизации.
+        /// </summary>
+        public event Action<int, double, string> ProgressUpdated;
+
+        /// <summary>
+        /// Event fired when optimization is completed.
+        /// Событие, срабатывающее при завершении оптимизации.
+        /// </summary>
+        public event Action<List<OptimizerReport>> OptimizationCompleted;
+
+        /// <summary>
+        /// Run the optimization process.
+        /// Запустить процесс оптимизации.
+        /// </summary>
+        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
+        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
+        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
+        /// <param name="maxIterations">Maximum number of iterations / Максимальное количество итераций</param>
+        /// <param name="populationSize">Population size for population-based algorithms / Размер популяции для популяционных алгоритмов</param>
+        /// <param name="cancellationToken">Cancellation token / Токен отмены</param>
+        /// <returns>List of optimization reports / Список отчетов об оптимизации</returns>
+        public List<OptimizerReport> Optimize(
             List<IIStrategyParameter> parameters,
             List<bool> parametersToOptimize,
-            OptimizerFaze faze)
+            OptimizerFaze faze,
+            int maxIterations,
+            int populationSize,
+            CancellationToken cancellationToken)
         {
-            _parameters = parameters;
-            _parametersToOptimize = parametersToOptimize;
-            _currentFaze = faze;
-
             if (_optimizerExecutor == null)
             {
                 throw new InvalidOperationException("OptimizerExecutor must be set before running optimization");
             }
 
-            _optimizerMaster?.SendLogMessage("RunOptimization: Starting Genetic Algorithm optimization", LogMessageType.System);
             
-            // Initialize the OptimizerExecutor properly like the brute-force optimizer does
-            _optimizerMaster?.SendLogMessage("RunOptimization: Starting OptimizerExecutor", LogMessageType.System);
-            bool startResult = _optimizerExecutor.Start(parametersToOptimize, parameters);
-            if (!startResult)
-            {
-                _optimizerMaster?.SendLogMessage("RunOptimization: Failed to start OptimizerExecutor", LogMessageType.Error);
-                return new List<OptimizerReport>();
-            }
-            _optimizerMaster?.SendLogMessage("RunOptimization: OptimizerExecutor started successfully", LogMessageType.System);
+            // Initialize stop flag and thread count
+            _needToStop = false;
+            _threadsCount = _optimizerMaster.ThreadsCount;
+            _currentOptimizerFaze = faze;
+            
+            // Thread pool approach: 1 thread = 1 species, no semaphore needed
             
             var results = new List<OptimizerReport>();
             
             try
             {
-                // Run the genetic algorithm evolution using the existing infrastructure
-                results = RunGeneticEvolutionWithExecutor(parameters, parametersToOptimize, faze);
+                // Get algorithm parameters
+                var crossoverRate = GetParameterValue("CrossoverRate", 0.8);
+                var mutationRate = GetParameterValue("MutationRate", 0.1);
+                var elitismCount = GetParameterValue("ElitismCount", 5);
+                var selectionMethod = GetParameterValue("SelectionMethod", SelectionMethod.Tournament);
+                var tournamentSize = GetParameterValue("TournamentSize", 3);
+
+                // Initialize population
+                _population = new Population(populationSize, parameters, parametersToOptimize, 0);
+                _originalPopulationSize = populationSize; // Store the original population size
+                _currentFaze = 1; // Use a simple counter instead of faze.Number
+                _currentOptimizerFaze = faze; // Store the actual optimization phase
                 
-                _optimizerMaster?.SendLogMessage($"RunOptimization: Genetic Algorithm completed with {results.Count} results", LogMessageType.System);
+                // Check if we need to run OutSample testing
+                var allFazes = _optimizerMaster.Fazes;
+                var inSampleFaze = allFazes.FirstOrDefault(f => f.TypeFaze == OptimizerFazeType.InSample);
+                var outSampleFaze = allFazes.FirstOrDefault(f => f.TypeFaze == OptimizerFazeType.OutOfSample);
+                
+                
+                if (inSampleFaze == null)
+                {
+                    return new List<OptimizerReport>();
+                }
+
+                // Phase 1: Run genetic algorithm on InSample data
+                _currentOptimizerFaze = inSampleFaze;
+                
+                for (int generation = 1; generation <= maxIterations; generation++)
+                {
+                    // Check for emergency stop
+                    if (_needToStop)
+                    {
+                        break;
+                    }
+
+                    // Check for cancellation
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    
+                    // Evaluate population
+                    EvaluatePopulation();
+                    
+                    // Sort by fitness
+                    _population.Individuals.Sort((a, b) => b.Fitness.CompareTo(a.Fitness));
+                    
+                    // Log best individual
+                    var bestIndividual = _population.Individuals[0];
+                    
+                    // Fire progress event
+                    ProgressUpdated?.Invoke(generation, bestIndividual.Fitness, $"InSample Generation {generation}/{maxIterations}");
+                    
+                    // Check for convergence or early stopping
+                    if (generation > 10 && CheckConvergence())
+                    {
+                        break;
+                    }
+                    
+                    // Create next generation
+                    if (generation < maxIterations)
+                    {
+                        CreateNextGeneration(crossoverRate, mutationRate, elitismCount, selectionMethod, tournamentSize);
+                    }
+                }
+                
+                // Phase 2: Test best individuals on OutSample data (if available)
+                if (outSampleFaze != null)
+                {
+                    _currentOptimizerFaze = outSampleFaze;
+                    
+                    // Get top individuals from InSample optimization
+                    var topIndividuals = _population.Individuals.Take(Math.Min(10, _population.Individuals.Count)).ToList();
+                    
+                    // Test each top individual on OutSample data in parallel
+                    try
+                    {
+                        var parallelOptions = new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = _threadsCount,
+                            CancellationToken = cancellationToken
+                        };
+                        
+                        Parallel.ForEach(topIndividuals, parallelOptions, individual =>
+                        {
+                            // Check for emergency stop
+                            if (_needToStop || cancellationToken.IsCancellationRequested)
+                            {
+                                return;
+                            }
+                            
+                            try
+                            {
+                                // Create a new report for OutSample testing
+                                var outSampleReport = new OptimizerFazeReport();
+                                outSampleReport.Faze = outSampleFaze;
+                                
+                                // Test the individual on OutSample data, preserving the original bot name
+                                var outSampleResult = RunIndividualTest(individual.Parameters, outSampleReport, individual.Report?.BotName);
+                                
+                                if (outSampleResult != null)
+                                {
+                                    // Store OutSample results in the individual
+                                    individual.OutSampleReport = outSampleResult;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // Log error but continue with other individuals
+                            }
+                        });
+                        
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // OutSample testing was cancelled
+                    }
+                    catch (Exception ex)
+                    {
+                        // OutSample testing failed
+                    }
+                }
+
+                // Return best results in proper OptimizerFazeReport structure
+                var bestIndividuals = _population.Individuals.Take(10).ToList();
+                
+                // Create InSample OptimizerFazeReport
+                var inSampleFazeReport = new OptimizerFazeReport();
+                inSampleFazeReport.Faze = inSampleFaze;
+                
+                // Create OutSample OptimizerFazeReport if OutSample testing was performed
+                OptimizerFazeReport outSampleFazeReport = null;
+                if (outSampleFaze != null)
+                {
+                    outSampleFazeReport = new OptimizerFazeReport();
+                    outSampleFazeReport.Faze = outSampleFaze;
+                }
+                
+                foreach (var individual in bestIndividuals)
+                {
+                    // Add InSample result to InSample faze report
+                    if (individual.Report != null)
+                    {
+                        inSampleFazeReport.Reports.Add(individual.Report);
+                    }
+                    
+                    // Add OutSample result to OutSample faze report if available
+                    if (individual.OutSampleReport != null && outSampleFazeReport != null)
+                    {
+                        outSampleFazeReport.Reports.Add(individual.OutSampleReport);
+                    }
+                }
+                
+                // Add faze reports to results (this is what the UI expects)
+                if (inSampleFazeReport.Reports.Count > 0)
+                {
+                    results.AddRange(inSampleFazeReport.Reports);
+                }
+                
+                if (outSampleFazeReport != null && outSampleFazeReport.Reports.Count > 0)
+                {
+                    results.AddRange(outSampleFazeReport.Reports);
+                }
+
+                // Fire completion event
+                OptimizationCompleted?.Invoke(results);
             }
             catch (Exception ex)
             {
-                _optimizerMaster?.SendLogMessage($"RunOptimization: Error in genetic algorithm: {ex.Message}", LogMessageType.Error);
-                _optimizerMaster?.SendLogMessage($"RunOptimization: Stack trace: {ex.StackTrace}", LogMessageType.Error);
+                _optimizerMaster?.SendLogMessage($"Genetic algorithm error: {ex.Message}", LogMessageType.Error);
+            }
+            finally
+            {
+                // Stop the optimizer executor
+                _optimizerExecutor?.Stop();
             }
 
             return results;
         }
 
+        #endregion
+
+        #region Private Methods
+
         /// <summary>
-        /// Run the genetic algorithm evolution process using the existing OptimizerExecutor infrastructure.
-        /// Запустить процесс эволюции генетического алгоритма используя существующую инфраструктуру OptimizerExecutor.
+        /// Get parameter value with type conversion.
+        /// Получить значение параметра с преобразованием типа.
         /// </summary>
-        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
-        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
-        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
-        /// <returns>List of optimization reports / Список отчетов об оптимизации</returns>
-        private List<OptimizerReport> RunGeneticEvolutionWithExecutor(
-            List<IIStrategyParameter> parameters,
-            List<bool> parametersToOptimize,
-            OptimizerFaze faze)
+        /// <typeparam name="T">Parameter type / Тип параметра</typeparam>
+        /// <param name="key">Parameter key / Ключ параметра</param>
+        /// <param name="defaultValue">Default value / Значение по умолчанию</param>
+        /// <returns>Parameter value / Значение параметра</returns>
+        private T GetParameterValue<T>(string key, T defaultValue)
         {
-            _optimizerMaster?.SendLogMessage("RunGeneticEvolutionWithExecutor: Starting genetic evolution", LogMessageType.System);
-            
-            var populationSize = (int)AlgorithmParameters.GetValueOrDefault("PopulationSize", 50);
-            var maxGenerations = (int)AlgorithmParameters.GetValueOrDefault("MaxGenerations", 100);
-            var mutationRate = (double)AlgorithmParameters.GetValueOrDefault("MutationRate", 0.1);
-            var crossoverRate = (double)AlgorithmParameters.GetValueOrDefault("CrossoverRate", 0.8);
-            
-            _optimizerMaster?.SendLogMessage($"RunGeneticEvolutionWithExecutor: Population={populationSize}, Generations={maxGenerations}, Mutation={mutationRate}, Crossover={crossoverRate}", LogMessageType.System);
-            
-            // Initialize population
-            var population = new Population(populationSize, parameters, parametersToOptimize, 0);
-            var allResults = new List<OptimizerReport>();
-            
-            for (int generation = 0; generation < maxGenerations; generation++)
+            if (_optimizerMaster?.AlgorithmParameters != null && _optimizerMaster.AlgorithmParameters.ContainsKey(key))
             {
-                _optimizerMaster?.SendLogMessage($"RunGeneticEvolutionWithExecutor: Generation {generation + 1}/{maxGenerations}", LogMessageType.System);
-                
-                // Evaluate population using the existing OptimizerExecutor infrastructure
-                EvaluatePopulationWithExecutor(population, faze);
-                
-                // Collect results from this generation
-                var generationResults = population.Individuals
-                    .Where(i => i.IsEvaluated && i.Report != null)
-                    .Select(i => i.Report)
-                    .ToList();
-                
-                allResults.AddRange(generationResults);
-                
-               // Track best individual
-               var bestIndividual = population.Individuals.OrderByDescending(i => i.Fitness).FirstOrDefault();
-               if (bestIndividual?.Report != null)
-               {
-                   _optimizerMaster?.SendLogMessage($"RunGeneticEvolutionWithExecutor: Generation {generation + 1} best fitness: {bestIndividual.Fitness:F2}", LogMessageType.System);
-               }
-               
-               // Log failure statistics for this generation
-               LogFailureStatistics(generation + 1);
-                
-                // Check for convergence or early stopping
-                if (HasConverged(population))
+                try
                 {
-                    _optimizerMaster?.SendLogMessage($"RunGeneticEvolutionWithExecutor: Converged at generation {generation + 1}", LogMessageType.System);
-                    break;
+                    return (T)Convert.ChangeType(_optimizerMaster.AlgorithmParameters[key], typeof(T));
                 }
-                
-                // Create next generation
-                if (generation < maxGenerations - 1) // Don't create next generation for the last iteration
+                catch
                 {
-                    var selectedIndividuals = SelectBestIndividuals(population, populationSize / 2);
-                    var newGeneration = BreedNewGeneration(selectedIndividuals, populationSize, mutationRate, crossoverRate, parameters, parametersToOptimize);
-                    
-                    // Replace population individuals
-                    population.Individuals.Clear();
-                    population.Individuals.AddRange(newGeneration);
+                    return defaultValue;
                 }
             }
-            
-            _optimizerMaster?.SendLogMessage($"RunGeneticEvolutionWithExecutor: Completed with {allResults.Count} total results", LogMessageType.System);
-            return allResults;
+            return defaultValue;
         }
 
         /// <summary>
-        /// Evaluate all individuals in the current population.
-        /// Оценить всех особей в текущей популяции.
+        /// Evaluate all individuals in the population using parallel execution.
+        /// Оценить всех особей в популяции используя параллельное выполнение.
         /// </summary>
-        protected override void EvaluatePopulation()
+        private void EvaluatePopulation()
         {
-            if (_optimizerExecutor == null)
+            // Get unevaluated individuals
+            var unevaluatedIndividuals = _population.Individuals.Where(i => !i.IsEvaluated).ToList();
+            
+            if (unevaluatedIndividuals.Count == 0)
             {
-                throw new InvalidOperationException("OptimizerExecutor must be set before running optimization");
+                return;
             }
-
-            var tasks = new List<System.Threading.Tasks.Task>();
-
-            foreach (var individual in CurrentPopulation.Individuals)
+            
+            // Use thread pool pattern: 1 thread = 1 species
+            var tasks = new List<Task>();
+            var individualQueue = new Queue<Individual>(unevaluatedIndividuals);
+            var queueLock = new object();
+            var completedCount = 0;
+            var totalCount = unevaluatedIndividuals.Count;
+            
+            // Create worker tasks (one per thread)
+            for (int i = 0; i < _threadsCount; i++)
             {
-                if (!individual.IsEvaluated)
+                int threadId = i;
+                var task = Task.Run(() =>
                 {
-                    var task = System.Threading.Tasks.Task.Run(() => EvaluateIndividual(individual));
-                    tasks.Add(task);
-                }
+                    while (true)
+                    {
+                        // Check for emergency stop
+                        if (_needToStop)
+                        {
+                            break;
+                        }
+                        
+                        Individual individual = null;
+                        
+                        // Get next individual to evaluate
+                        lock (queueLock)
+                        {
+                            if (individualQueue.Count == 0)
+                            {
+                                break; // No more individuals to evaluate
+                            }
+                            individual = individualQueue.Dequeue();
+                        }
+                        
+                        if (individual != null)
+                        {
+                            EvaluateIndividual(individual);
+                            
+                            // Update progress
+                            lock (queueLock)
+                            {
+                                completedCount++;
+                                _optimizerMaster?.SendLogMessage($"Thread {threadId}: Completed evaluation. Progress: {completedCount}/{totalCount}", LogMessageType.System);
+                            }
+                        }
+                    }
+                });
+                
+                tasks.Add(task);
             }
-
-            // Wait for all evaluations to complete
-            System.Threading.Tasks.Task.WaitAll(tasks.ToArray(), CancellationToken);
-
-            // Update fitness evaluator normalization ranges
-            var evaluatedIndividuals = CurrentPopulation.Individuals.Where(i => i.IsEvaluated && i.Report != null).ToList();
-            if (evaluatedIndividuals.Count > 0)
-            {
-                var reports = evaluatedIndividuals.Select(i => i.Report).ToList();
-                FitnessEvaluator.UpdateNormalizationRanges(reports);
-            }
+            
+            // Wait for all threads to complete
+            Task.WaitAll(tasks.ToArray());
         }
 
         /// <summary>
@@ -274,7 +459,6 @@ namespace OsEngine.OsOptimizer.Algorithms
         {
             try
             {
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Starting evaluation of individual with {individual.Parameters.Count} parameters", LogMessageType.System);
                 
                 if (_optimizerExecutor == null || _optimizerMaster == null)
                 {
@@ -284,608 +468,394 @@ namespace OsEngine.OsOptimizer.Algorithms
                     return;
                 }
 
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: Validated executor and master", LogMessageType.System);
-
                 // Create a temporary report for this individual test
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: Creating OptimizerFazeReport for individual test", LogMessageType.System);
                 var report = new OptimizerFazeReport();
-                report.Faze = _currentFaze;
-                
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: Created OptimizerFazeReport, calling RunIndividualTest", LogMessageType.System);
+                report.Faze = _currentOptimizerFaze; // Use the actual optimization phase with correct date range
                 
                 // Use the OptimizerExecutor's infrastructure to run the test
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: About to call RunIndividualTest", LogMessageType.System);
                 var result = RunIndividualTest(individual.Parameters, report);
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: RunIndividualTest returned", LogMessageType.System);
                 
                 if (result != null)
                 {
-                    _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Individual test completed successfully, profit: {result.TotalProfit}", LogMessageType.System);
                     individual.Report = result;
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividual: About to calculate fitness", LogMessageType.System);
                     individual.Fitness = CalculateFitness(individual);
-                    _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Calculated fitness: {individual.Fitness}", LogMessageType.System);
+                    
+                    _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Individual {individual.Id} evaluated successfully - Fitness: {individual.Fitness:F4}, Profit: {result.TotalProfit:F2}", LogMessageType.System);
+                    
+                    if (individual.Report.PositionsCount == 0)
+                    {
+                        _zeroTradeBots++;
+                    }
                 }
                 else
                 {
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividual: Individual test failed - result is null", LogMessageType.Error);
-                    individual.Fitness = 0.0;
+                    _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Individual {individual.Id} evaluation failed - result is null", LogMessageType.Error);
+                    // Create a dummy report with poor fitness for failed evaluations
+                    individual.Report = CreateDummyReport(individual.Parameters);
+                    individual.Fitness = -1000; // Very poor fitness for failed evaluations
                 }
 
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: Setting individual as evaluated", LogMessageType.System);
                 individual.IsEvaluated = true;
-                _optimizerMaster?.SendLogMessage("EvaluateIndividual: Individual evaluation completed", LogMessageType.System);
             }
             catch (Exception ex)
             {
-                // Log error and set fitness to 0
-                individual.Fitness = 0.0;
+                _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Exception evaluating individual {individual.Id}: {ex.Message}", LogMessageType.Error);
+                // Create a dummy report with poor fitness for exceptions
+                individual.Report = CreateDummyReport(individual.Parameters);
+                individual.Fitness = -1000; // Very poor fitness for exceptions
                 individual.IsEvaluated = true;
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Error evaluating individual: {ex.Message}", LogMessageType.Error);
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividual: Stack trace: {ex.StackTrace}", LogMessageType.Error);
             }
         }
 
         /// <summary>
-        /// Run a test for an individual using the OptimizerExecutor infrastructure.
-        /// Запустить тест для особи, используя инфраструктуру OptimizerExecutor.
+        /// Run a test for an individual using the improved genetic algorithm bot testing infrastructure.
+        /// Запустить тест для особи используя улучшенную инфраструктуру тестирования ботов генетического алгоритма.
+        /// </summary>
+        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
+        /// <param name="report">Report to fill with results / Отчет для заполнения результатами</param>
+        /// <param name="originalBotName">Original bot name to preserve (optional) / Оригинальное имя бота для сохранения (опционально)</param>
+        /// <returns>Optimization report / Отчет об оптимизации</returns>
+        private async Task<OptimizerReport> RunIndividualTestAsync(List<IIStrategyParameter> parameters, OptimizerFazeReport report, string originalBotName = null)
+        {
+            if (_optimizerExecutor == null || _optimizerMaster == null)
+            {
+                throw new InvalidOperationException("OptimizerExecutor and OptimizerMaster must be set before running individual tests");
+            }
+
+            // Check if optimization should stop
+            if (_needToStop)
+            {
+                return null;
+            }
+
+            // Use the new genetic algorithm-specific method with retry logic
+            const int maxRetries = 2; // Reduced retries to prevent excessive delays
+            const int retryDelayMs = 2000; // Increased delay to give system more time to recover
+            
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                // Check if optimization should stop before each attempt
+                if (_needToStop)
+                {
+                    return null;
+                }
+                
+                try
+                {
+                    // Use the new TestBotForGeneticAlgorithm method
+                    var result = _optimizerExecutor.TestBotForGeneticAlgorithm(parameters, report.Faze, originalBotName);
+                    
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                    
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(retryDelayMs);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(retryDelayMs);
+                    }
+                    else
+                    {
+                        // Return null instead of throwing to allow the algorithm to continue with other individuals
+                        return null;
+                    }
+                }
+            }
+            
+            // Return null instead of throwing to allow the algorithm to continue
+            return null;
+        }
+
+        /// <summary>
+        /// Run a test for an individual using the improved genetic algorithm bot testing infrastructure.
+        /// Запустить тест для особи используя улучшенную инфраструктуру тестирования ботов генетического алгоритма.
         /// </summary>
         /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
         /// <param name="report">Report to fill with results / Отчет для заполнения результатами</param>
         /// <returns>Optimization report / Отчет об оптимизации</returns>
-        private OptimizerReport RunIndividualTest(List<IIStrategyParameter> parameters, OptimizerFazeReport report)
+        private OptimizerReport RunIndividualTest(List<IIStrategyParameter> parameters, OptimizerFazeReport report, string originalBotName = null)
         {
-            try
-            {
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Starting", LogMessageType.System);
-                
-                if (_optimizerExecutor == null || _optimizerMaster == null)
-                {
-                    _optimizerMaster?.SendLogMessage("RunIndividualTest: OptimizerExecutor or OptimizerMaster is null", LogMessageType.Error);
-                    return null;
-                }
-
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Validated executor and master", LogMessageType.System);
-
-                // Create a unique bot name for this individual
-                // Use a numeric format that's compatible with OptimizerReport.BotNum
-                string botName = $"{Random.Next(100000, 999999)}";
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: Created bot name: {botName}", LogMessageType.System);
-                
-                // Use reflection to access the OptimizerExecutor's StartNewBot method
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Getting OptimizerExecutor type", LogMessageType.System);
-                var executorType = typeof(OptimizerExecutor);
-                
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Looking for StartNewBot method", LogMessageType.System);
-                var startNewBotMethod = executorType.GetMethod("StartNewBot", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                
-                if (startNewBotMethod == null)
-                {
-                    _optimizerMaster?.SendLogMessage("RunIndividualTest: Failed to get StartNewBot method", LogMessageType.Error);
-                    return null;
-                }
-                
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Got StartNewBot method", LogMessageType.System);
-                
-                // Log parameters before calling StartNewBot
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: About to call StartNewBot with {_parameters?.Count ?? 0} base parameters and {parameters?.Count ?? 0} individual parameters", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: Report object is {(report == null ? "null" : "valid")}", LogMessageType.System);
-                
-                // Call StartNewBot with the individual's parameters
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Calling StartNewBot method", LogMessageType.System);
-                
-                try
-                {
-                    // Start a task to call StartNewBot with a timeout
-                    var startNewBotTask = Task.Run(() =>
-                    {
-                        startNewBotMethod.Invoke(_optimizerExecutor, new object[] { 
-                            _parameters, // Use original parameters as base
-                            parameters,  // Use individual's parameters as optimized parameters
-                            report, 
-                            botName 
-                        });
-                    });
-                    
-                    // Wait for the task to complete with a 30-second timeout
-                    if (startNewBotTask.Wait(30000))
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: StartNewBot method call completed successfully", LogMessageType.System);
-                    }
-                    else
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: StartNewBot method call timed out after 30 seconds", LogMessageType.Error);
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: TIMEOUT CAUSE: Bot connection timeout or strategy execution timeout", LogMessageType.Error);
-                        return null;
-                    }
-                }
-                catch (Exception invokeEx)
-                {
-                    _optimizerMaster?.SendLogMessage($"RunIndividualTest: Exception during StartNewBot invoke: {invokeEx.Message}", LogMessageType.Error);
-                    _optimizerMaster?.SendLogMessage($"RunIndividualTest: Exception type: {invokeEx.GetType().Name}", LogMessageType.Error);
-                    _optimizerMaster?.SendLogMessage($"RunIndividualTest: StartNewBot invoke stack trace: {invokeEx.StackTrace}", LogMessageType.Error);
-                    
-                    // Log specific exception causes
-                    if (invokeEx is ArgumentException)
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: ARGUMENT ERROR - Invalid parameter values or ranges", LogMessageType.Error);
-                    }
-                    else if (invokeEx is InvalidOperationException)
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: INVALID OPERATION - OptimizerExecutor not in correct state", LogMessageType.Error);
-                    }
-                    else if (invokeEx is TargetInvocationException)
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: TARGET INVOCATION ERROR - Error in StartNewBot method execution", LogMessageType.Error);
-                    }
-                    
-                    return null;
-                }
-                
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: StartNewBot completed, waiting for test results", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: Initial report.Reports.Count = {report.Reports.Count}", LogMessageType.System);
-                
-                // Wait for the test to complete and results to be populated
-                // StartNewBot starts the test asynchronously, so we need to wait for completion
-                DateTime startWaiting = DateTime.Now;
-                int waitCount = 0;
-                
-                _optimizerMaster?.SendLogMessage("RunIndividualTest: Starting wait loop for test results", LogMessageType.System);
-                
-                while (report.Reports.Count == 0)
-                {
-                    Thread.Sleep(100);
-                    waitCount++;
-                    
-                    // Log progress every 5 seconds
-                    if (waitCount % 50 == 0)
-                    {
-                        _optimizerMaster?.SendLogMessage($"RunIndividualTest: Still waiting for test results... ({waitCount * 100}ms), report.Reports.Count = {report.Reports.Count}", LogMessageType.System);
-                    }
-                    
-                    // Timeout after 60 seconds
-                    if (startWaiting.AddSeconds(60) < DateTime.Now)
-                    {
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: Test timeout after 60 seconds", LogMessageType.Error);
-                        _optimizerMaster?.SendLogMessage($"RunIndividualTest: Final report.Reports.Count = {report.Reports.Count}", LogMessageType.Error);
-                        _optimizerMaster?.SendLogMessage("RunIndividualTest: TIMEOUT CAUSE: Strategy execution timeout, data loading issues, or bot connection problems", LogMessageType.Error);
-                        return null;
-                    }
-                }
-                
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: Got {report.Reports.Count} reports", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"RunIndividualTest: Returning first report with profit: {report.Reports[0]?.TotalProfit ?? 0}", LogMessageType.System);
-                return report.Reports[0];
-            }
-            catch (Exception ex)
-            {
-                // Log error if possible
-                _optimizerMaster?.SendLogMessage($"Error in RunIndividualTest: {ex.Message}", LogMessageType.Error);
-                _optimizerMaster?.SendLogMessage($"Stack trace: {ex.StackTrace}", LogMessageType.Error);
-                return null;
-            }
+            // Run the async version synchronously
+            return RunIndividualTestAsync(parameters, report, originalBotName).GetAwaiter().GetResult();
         }
 
 
         /// <summary>
-        /// Check if the algorithm has converged.
-        /// Проверить, сошелся ли алгоритм.
-        /// </summary>
-        protected override bool HasConverged()
-        {
-            if (CurrentPopulation == null || CurrentPopulation.Individuals.Count == 0)
-                return false;
-
-            double convergenceThreshold = (double)AlgorithmParameters["ConvergenceThreshold"];
-            int maxStagnationGenerations = (int)AlgorithmParameters["MaxStagnationGenerations"];
-
-            // Check fitness standard deviation
-            double stdDev = CurrentPopulation.FitnessStandardDeviation;
-            if (stdDev < convergenceThreshold)
-            {
-                return true;
-            }
-
-            // Check for stagnation (no improvement in best fitness for several generations)
-            if (BestIndividuals.Count >= maxStagnationGenerations)
-            {
-                var recentBest = BestIndividuals.Take(maxStagnationGenerations).ToList();
-                var oldestBest = recentBest.Last();
-                var newestBest = recentBest.First();
-
-                if (Math.Abs(newestBest.Fitness - oldestBest.Fitness) < convergenceThreshold)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Set default algorithm parameters.
-        /// Установить параметры алгоритма по умолчанию.
-        /// </summary>
-        protected override void SetDefaultParameters()
-        {
-            base.SetDefaultParameters();
-            
-            // Override with GA-specific defaults
-            AlgorithmParameters["PopulationSize"] = 50;
-            AlgorithmParameters["MaxGenerations"] = 100;
-            AlgorithmParameters["EliteCount"] = 5;
-            AlgorithmParameters["CrossoverRate"] = 0.8;
-            AlgorithmParameters["MutationRate"] = 0.1;
-            AlgorithmParameters["MutationStrength"] = 0.1;
-            AlgorithmParameters["SelectionMethod"] = SelectionMethod.Tournament;
-            AlgorithmParameters["TournamentSize"] = 3;
-            AlgorithmParameters["ConvergenceThreshold"] = 0.001;
-            AlgorithmParameters["MaxStagnationGenerations"] = 20;
-        }
-
-        /// <summary>
-        /// Get algorithm-specific parameters.
-        /// Получить специфичные для алгоритма параметры.
-        /// </summary>
-        public override Dictionary<string, object> GetAlgorithmParameters()
-        {
-            var parameters = base.GetAlgorithmParameters();
-            
-            // Add GA-specific parameters
-            parameters["SelectionMethod"] = AlgorithmParameters["SelectionMethod"];
-            parameters["TournamentSize"] = AlgorithmParameters["TournamentSize"];
-            parameters["ConvergenceThreshold"] = AlgorithmParameters["ConvergenceThreshold"];
-            parameters["MaxStagnationGenerations"] = AlgorithmParameters["MaxStagnationGenerations"];
-            
-            return parameters;
-        }
-
-        /// <summary>
-        /// Set algorithm-specific parameters.
-        /// Установить специфичные для алгоритма параметры.
-        /// </summary>
-        public override void SetAlgorithmParameters(Dictionary<string, object> parameters)
-        {
-            base.SetAlgorithmParameters(parameters);
-            
-            // Validate GA-specific parameters
-            if (parameters.ContainsKey("SelectionMethod") && parameters["SelectionMethod"] is SelectionMethod selectionMethod)
-            {
-                AlgorithmParameters["SelectionMethod"] = selectionMethod;
-            }
-            
-            if (parameters.ContainsKey("TournamentSize") && parameters["TournamentSize"] is int tournamentSize && tournamentSize > 0)
-            {
-                AlgorithmParameters["TournamentSize"] = tournamentSize;
-            }
-            
-            if (parameters.ContainsKey("ConvergenceThreshold") && parameters["ConvergenceThreshold"] is double threshold && threshold > 0)
-            {
-                AlgorithmParameters["ConvergenceThreshold"] = threshold;
-            }
-            
-            if (parameters.ContainsKey("MaxStagnationGenerations") && parameters["MaxStagnationGenerations"] is int maxStagnation && maxStagnation > 0)
-            {
-                AlgorithmParameters["MaxStagnationGenerations"] = maxStagnation;
-            }
-        }
-
-
-        /// <summary>
-        /// Create next generation with advanced genetic operations.
-        /// Создать следующее поколение с продвинутыми генетическими операциями.
-        /// </summary>
-        private Population CreateNextGenerationAdvanced(
-            int eliteCount, double crossoverRate, double mutationRate, 
-            double mutationStrength, SelectionMethod selectionMethod)
-        {
-            var nextGeneration = new Population(new List<Individual>(), CurrentPopulation.Generation + 1);
-
-            // Preserve elite individuals
-            var elite = CurrentPopulation.GetTopIndividuals(eliteCount);
-            foreach (var individual in elite)
-            {
-                nextGeneration.AddIndividual(individual.Clone());
-            }
-
-            // Create offspring to fill the rest of the population
-            int offspringNeeded = CurrentPopulation.Individuals.Count - eliteCount;
-
-            for (int i = 0; i < offspringNeeded; i++)
-            {
-                // Select parents using specified method
-                var parents = CurrentPopulation.SelectIndividuals(2, selectionMethod);
-                if (parents.Count >= 2)
-                {
-                    // Create offspring through crossover
-                    var offspring = parents[0].Crossover(parents[1], crossoverRate);
-                    
-                    // Apply mutation
-                    offspring = offspring.Mutate(mutationRate, mutationStrength);
-                    
-                    nextGeneration.AddIndividual(offspring);
-                }
-            }
-
-            return nextGeneration;
-        }
-
-        /// <summary>
-        /// Evaluate population using the existing OptimizerExecutor infrastructure.
-        /// Оценить популяцию используя существующую инфраструктуру OptimizerExecutor.
-        /// </summary>
-        /// <param name="population">Population to evaluate / Популяция для оценки</param>
-        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
-        private void EvaluatePopulationWithExecutor(Population population, OptimizerFaze faze)
-        {
-            _optimizerMaster?.SendLogMessage($"EvaluatePopulationWithExecutor: Evaluating {population.Individuals.Count} individuals", LogMessageType.System);
-            
-            foreach (var individual in population.Individuals)
-            {
-                if (!individual.IsEvaluated)
-                {
-                    EvaluateIndividualWithExecutor(individual, faze);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Evaluate individual using the existing OptimizerExecutor infrastructure.
-        /// Оценить особь используя существующую инфраструктуру OptimizerExecutor.
+        /// Calculate fitness for an individual based on its performance.
+        /// Рассчитать пригодность особи на основе ее производительности.
         /// </summary>
         /// <param name="individual">Individual to evaluate / Особь для оценки</param>
-        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
-        private void EvaluateIndividualWithExecutor(Individual individual, OptimizerFaze faze)
+        /// <returns>Fitness value / Значение пригодности</returns>
+        private double CalculateFitness(Individual individual)
         {
-            _totalEvaluations++;
-            
-            try
+            if (individual.Report == null)
             {
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Evaluating individual {_totalEvaluations} with {individual.Parameters.Count} parameters", LogMessageType.System);
-                
-                // Log parameter details for debugging
-                for (int i = 0; i < individual.Parameters.Count; i++)
-                {
-                    var param = individual.Parameters[i];
-                    if (param.Type == StrategyParameterType.Int)
-                    {
-                        var intParam = (StrategyParameterInt)param;
-                        _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Param {i}: {param.Name} = {intParam.ValueInt} (range: {intParam.ValueIntStart}-{intParam.ValueIntStop})", LogMessageType.System);
-                    }
-                    else if (param.Type == StrategyParameterType.Decimal)
-                    {
-                        var decParam = (StrategyParameterDecimal)param;
-                        _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Param {i}: {param.Name} = {decParam.ValueDecimal} (range: {decParam.ValueDecimalStart}-{decParam.ValueDecimalStop})", LogMessageType.System);
-                    }
-                    else if (param.Type == StrategyParameterType.Bool)
-                    {
-                        var boolParam = (StrategyParameterBool)param;
-                        _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Param {i}: {param.Name} = {boolParam.ValueBool}", LogMessageType.System);
-                    }
-                }
-                
-                // Use the existing EvaluateIndividual method from the base class
-                // This will use the OptimizerExecutor infrastructure properly
-                EvaluateIndividual(individual);
-                
-                if (individual.Report != null)
-                {
-                    individual.Fitness = CalculateFitness(individual);
-                    _successfulEvaluations++;
-                    _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Individual test SUCCESS - fitness: {individual.Fitness:F2}, profit: {individual.Report.TotalProfit:F2}", LogMessageType.System);
-                }
-                else
-                {
-                    individual.Fitness = 0.0;
-                    individual.IsEvaluated = true;
-                    _otherFailures++;
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividualWithExecutor: Individual test FAILED - no report generated", LogMessageType.Error);
-                    
-                    // Log potential causes
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividualWithExecutor: Possible causes: bot connection timeout, strategy compilation error, invalid parameters, or data issues", LogMessageType.Error);
-                }
+                return 0.0;
             }
-            catch (Exception ex)
+
+            // Simple fitness function based on profit and drawdown
+            double profit = (double)individual.Report.TotalProfit;
+            double drawdown = (double)individual.Report.MaxDrawDawn;
+            double positions = individual.Report.PositionsCount;
+
+            // Penalize zero-trade bots
+            if (positions == 0)
             {
-                individual.Fitness = 0.0;
-                individual.IsEvaluated = true;
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: EXCEPTION during evaluation: {ex.Message}", LogMessageType.Error);
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Exception type: {ex.GetType().Name}", LogMessageType.Error);
-                _optimizerMaster?.SendLogMessage($"EvaluateIndividualWithExecutor: Stack trace: {ex.StackTrace}", LogMessageType.Error);
-                
-                // Track specific exception types
-                if (ex is TimeoutException)
-                {
-                    _timeoutFailures++;
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividualWithExecutor: TIMEOUT - Bot took too long to connect or complete test", LogMessageType.Error);
-                }
-                else if (ex is ArgumentException)
-                {
-                    _parameterFailures++;
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividualWithExecutor: INVALID ARGUMENTS - Check parameter values and ranges", LogMessageType.Error);
-                }
-                else if (ex is InvalidOperationException)
-                {
-                    _connectionFailures++;
-                    _optimizerMaster?.SendLogMessage("EvaluateIndividualWithExecutor: INVALID OPERATION - Check OptimizerExecutor state", LogMessageType.Error);
-                }
-                else
-                {
-                    _otherFailures++;
-                }
+                return -1000.0;
             }
+
+            // Basic fitness: profit - drawdown penalty
+            double fitness = profit - (drawdown * 10); // Penalize drawdown heavily
+
+            return fitness;
         }
 
         /// <summary>
-        /// Log failure statistics for diagnostics.
-        /// Логировать статистику ошибок для диагностики.
+        /// Create a dummy report for failed evaluations.
+        /// Создать фиктивный отчет для неудачных оценок.
         /// </summary>
-        /// <param name="generation">Current generation number / Номер текущего поколения</param>
-        private void LogFailureStatistics(int generation)
-        {
-            if (_totalEvaluations > 0)
-            {
-                double successRate = (double)_successfulEvaluations / _totalEvaluations * 100;
-                double timeoutRate = (double)_timeoutFailures / _totalEvaluations * 100;
-                double parameterRate = (double)_parameterFailures / _totalEvaluations * 100;
-                double connectionRate = (double)_connectionFailures / _totalEvaluations * 100;
-                double otherRate = (double)_otherFailures / _totalEvaluations * 100;
-                
-                _optimizerMaster?.SendLogMessage($"=== Generation {generation} Failure Statistics ===", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Total Evaluations: {_totalEvaluations}", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Success Rate: {successRate:F1}% ({_successfulEvaluations}/{_totalEvaluations})", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Timeout Failures: {timeoutRate:F1}% ({_timeoutFailures})", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Parameter Failures: {parameterRate:F1}% ({_parameterFailures})", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Connection Failures: {connectionRate:F1}% ({_connectionFailures})", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage($"Other Failures: {otherRate:F1}% ({_otherFailures})", LogMessageType.System);
-                _optimizerMaster?.SendLogMessage("===============================================", LogMessageType.System);
-                
-                // Provide recommendations based on failure patterns
-                if (timeoutRate > 20)
-                {
-                    _optimizerMaster?.SendLogMessage("RECOMMENDATION: High timeout rate - consider increasing timeout values or checking data availability", LogMessageType.Error);
-                }
-                if (parameterRate > 10)
-                {
-                    _optimizerMaster?.SendLogMessage("RECOMMENDATION: High parameter failure rate - check parameter ranges and validation", LogMessageType.Error);
-                }
-                if (connectionRate > 15)
-                {
-                    _optimizerMaster?.SendLogMessage("RECOMMENDATION: High connection failure rate - check OptimizerExecutor state and bot creation", LogMessageType.Error);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Select the best individuals for breeding.
-        /// Выбрать лучших особей для размножения.
-        /// </summary>
-        /// <param name="population">Population to select from / Популяция для выбора</param>
-        /// <param name="count">Number of individuals to select / Количество особей для выбора</param>
-        /// <returns>Selected individuals / Выбранные особи</returns>
-        private List<Individual> SelectBestIndividuals(Population population, int count)
-        {
-            return population.Individuals
-                .OrderByDescending(i => i.Fitness)
-                .Take(count)
-                .ToList();
-        }
-
-        /// <summary>
-        /// Breed a new generation from selected individuals.
-        /// Вывести новое поколение от выбранных особей.
-        /// </summary>
-        /// <param name="selectedIndividuals">Selected individuals for breeding / Выбранные особи для размножения</param>
-        /// <param name="populationSize">Size of new population / Размер новой популяции</param>
-        /// <param name="mutationRate">Mutation rate / Частота мутаций</param>
-        /// <param name="crossoverRate">Crossover rate / Частота скрещивания</param>
         /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
-        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
-        /// <returns>New generation / Новое поколение</returns>
-        private List<Individual> BreedNewGeneration(
-            List<Individual> selectedIndividuals,
-            int populationSize,
-            double mutationRate,
-            double crossoverRate,
-            List<IIStrategyParameter> parameters,
-            List<bool> parametersToOptimize)
+        /// <returns>Dummy optimization report / Фиктивный отчет об оптимизации</returns>
+        private OptimizerReport CreateDummyReport(List<IIStrategyParameter> parameters)
         {
-            var newGeneration = new List<Individual>();
-            
-            // Keep some of the best individuals (elitism)
-            var eliteCount = Math.Max(1, populationSize / 10);
-            newGeneration.AddRange(selectedIndividuals.Take(eliteCount));
-            
-            // Breed new individuals
-            while (newGeneration.Count < populationSize)
-            {
-                var parent1 = selectedIndividuals[Random.Next(selectedIndividuals.Count)];
-                var parent2 = selectedIndividuals[Random.Next(selectedIndividuals.Count)];
-                
-                if (Random.NextDouble() < crossoverRate)
-                {
-                    // Crossover - create new individual with mixed parameters
-                    var child = CreateCrossoverIndividual(parent1, parent2, parameters, parametersToOptimize);
-                    newGeneration.Add(child);
-                }
-                else
-                {
-                    // Clone parent with mutation
-                    var child = CloneIndividual(parent1, parameters, parametersToOptimize);
-                    if (Random.NextDouble() < mutationRate)
-                    {
-                        // Apply mutation
-                        ApplyMutation(child, parameters, parametersToOptimize);
-                    }
-                    newGeneration.Add(child);
-                }
-            }
-            
-            return newGeneration;
+            var dummyReport = new OptimizerReport(parameters);
+            dummyReport.TotalProfit = -1000; // Very poor profit
+            dummyReport.MaxDrawDawn = -1000; // Very poor drawdown
+            dummyReport.PositionsCount = 0; // No trades
+            dummyReport.BotName = "FailedBot_" + Guid.NewGuid().ToString("N")[..8];
+            return dummyReport;
         }
 
         /// <summary>
         /// Check if the population has converged.
-        /// Проверить, сходится ли популяция.
+        /// Проверить, сошлась ли популяция.
         /// </summary>
-        /// <param name="population">Population to check / Популяция для проверки</param>
-        /// <returns>True if converged / True если сошлась</returns>
-        private bool HasConverged(Population population)
+        /// <returns>True if converged / True, если сошлась</returns>
+        private bool CheckConvergence()
         {
-            if (population.Individuals.Count < 2) return false;
+            if (_population.Individuals.Count < 10)
+            {
+                return false;
+            }
+
+            // Check if top 10% of individuals have similar fitness
+            var topCount = Math.Max(1, _population.Individuals.Count / 10);
+            var topIndividuals = _population.Individuals.Take(topCount).ToList();
             
-            var fitnesses = population.Individuals.Select(i => i.Fitness).ToList();
-            var maxFitness = fitnesses.Max();
-            var minFitness = fitnesses.Min();
+            double maxFitness = topIndividuals[0].Fitness;
+            double minFitness = topIndividuals[topCount - 1].Fitness;
             
-            // Consider converged if fitness variation is small
+            // Consider converged if fitness range is small
             return (maxFitness - minFitness) < 0.01;
         }
 
+        /// <summary>
+        /// Create the next generation using genetic operations.
+        /// Создать следующее поколение используя генетические операции.
+        /// </summary>
+        /// <param name="crossoverRate">Crossover rate / Частота скрещивания</param>
+        /// <param name="mutationRate">Mutation rate / Частота мутации</param>
+        /// <param name="elitismCount">Number of elite individuals to preserve / Количество элитных особей для сохранения</param>
+        /// <param name="selectionMethod">Selection method / Метод отбора</param>
+        /// <param name="tournamentSize">Tournament size for tournament selection / Размер турнира для турнирного отбора</param>
+        private void CreateNextGeneration(double crossoverRate, double mutationRate, int elitismCount, SelectionMethod selectionMethod, int tournamentSize)
+        {
+            var newIndividuals = new List<Individual>();
+            
+            // Use the original population size to ensure we always maintain the target population size
+            int targetPopulationSize = _originalPopulationSize;
+            
+            // Preserve elite individuals
+            for (int i = 0; i < elitismCount && i < _population.Individuals.Count; i++)
+            {
+                newIndividuals.Add(_population.Individuals[i]);
+            }
+            
+            // Generate remaining individuals through crossover and mutation
+            // Use targetPopulationSize to ensure we always maintain the original population size
+            while (newIndividuals.Count < targetPopulationSize)
+            {
+                // Select parents
+                var parent1 = SelectParent(selectionMethod, tournamentSize);
+                var parent2 = SelectParent(selectionMethod, tournamentSize);
+                
+                // Create offspring through crossover
+                var offspring = Crossover(parent1, parent2, crossoverRate);
+                
+                // Apply mutation
+                Mutate(offspring, mutationRate);
+                
+                // Reset evaluation status
+                offspring.IsEvaluated = false;
+                offspring.Report = null;
+                offspring.Fitness = 0.0;
+                
+                newIndividuals.Add(offspring);
+            }
+            
+            // Replace the population individuals and increment generation
+            _population.Individuals.Clear();
+            foreach (var individual in newIndividuals)
+            {
+                _population.Individuals.Add(individual);
+            }
+            _population.Generation++;
+        }
+
+        /// <summary>
+        /// Select a parent using the specified selection method.
+        /// Выбрать родителя используя указанный метод отбора.
+        /// </summary>
+        /// <param name="selectionMethod">Selection method / Метод отбора</param>
+        /// <param name="tournamentSize">Tournament size / Размер турнира</param>
+        /// <returns>Selected parent / Выбранный родитель</returns>
+        private Individual SelectParent(SelectionMethod selectionMethod, int tournamentSize)
+        {
+            switch (selectionMethod)
+            {
+                case SelectionMethod.Tournament:
+                    return TournamentSelection(tournamentSize);
+                case SelectionMethod.Roulette:
+                    return RouletteSelection();
+                default:
+                    return TournamentSelection(tournamentSize);
+            }
+        }
+
+        /// <summary>
+        /// Tournament selection.
+        /// Турнирный отбор.
+        /// </summary>
+        /// <param name="tournamentSize">Tournament size / Размер турнира</param>
+        /// <returns>Selected individual / Выбранная особь</returns>
+        private Individual TournamentSelection(int tournamentSize)
+        {
+            var tournament = new List<Individual>();
+            
+            for (int i = 0; i < tournamentSize; i++)
+            {
+                int randomIndex = _random.Next(_population.Individuals.Count);
+                tournament.Add(_population.Individuals[randomIndex]);
+            }
+            
+            return tournament.OrderByDescending(x => x.Fitness).First();
+        }
+
+        /// <summary>
+        /// Roulette wheel selection.
+        /// Отбор методом рулетки.
+        /// </summary>
+        /// <returns>Selected individual / Выбранная особь</returns>
+        private Individual RouletteSelection()
+        {
+            double totalFitness = _population.Individuals.Sum(x => Math.Max(0, x.Fitness));
+            
+            if (totalFitness <= 0)
+            {
+                return _population.Individuals[_random.Next(_population.Individuals.Count)];
+            }
+            
+            double randomValue = _random.NextDouble() * totalFitness;
+            double currentSum = 0;
+            
+            foreach (var individual in _population.Individuals)
+            {
+                currentSum += Math.Max(0, individual.Fitness);
+                if (currentSum >= randomValue)
+                {
+                    return individual;
+                }
+            }
+            
+            return _population.Individuals.Last();
+        }
+
+        /// <summary>
+        /// Perform crossover between two parents to create offspring.
+        /// Выполнить скрещивание между двумя родителями для создания потомства.
+        /// </summary>
+        /// <param name="parent1">First parent / Первый родитель</param>
+        /// <param name="parent2">Second parent / Второй родитель</param>
+        /// <param name="crossoverRate">Crossover rate / Частота скрещивания</param>
+        /// <returns>Offspring / Потомство</returns>
+        private Individual Crossover(Individual parent1, Individual parent2, double crossoverRate)
+        {
+            if (_random.NextDouble() > crossoverRate)
+            {
+                // No crossover, return copy of parent1
+                return parent1.Clone();
+            }
+            
+            var offspringParams = new List<IIStrategyParameter>();
+            
+            // Uniform crossover
+            for (int i = 0; i < parent1.Parameters.Count; i++)
+            {
+                if (_random.NextDouble() < 0.5)
+                {
+                    offspringParams.Add(parent1.Parameters[i]);
+                }
+                else
+                {
+                    offspringParams.Add(parent2.Parameters[i]);
+                }
+            }
+            
+            return new Individual(offspringParams);
+        }
 
         /// <summary>
         /// Apply mutation to an individual.
         /// Применить мутацию к особи.
         /// </summary>
         /// <param name="individual">Individual to mutate / Особь для мутации</param>
-        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
-        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
-        private void ApplyMutation(Individual individual, List<IIStrategyParameter> parameters, List<bool> parametersToOptimize)
+        /// <param name="mutationRate">Mutation rate / Частота мутации</param>
+        private void Mutate(Individual individual, double mutationRate)
+        {
+            foreach (var parameter in individual.Parameters)
+            {
+                if (_random.NextDouble() < mutationRate)
+                {
+                    ApplyMutation(parameter);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Apply mutation to a specific parameter.
+        /// Применить мутацию к конкретному параметру.
+        /// </summary>
+        /// <param name="parameter">Parameter to mutate / Параметр для мутации</param>
+        private void ApplyMutation(IIStrategyParameter parameter)
         {
             try
             {
-                for (int i = 0; i < individual.Parameters.Count; i++)
+                // Simple mutation: randomly change parameter value within its range
+                if (parameter is StrategyParameterDecimalCheckBox decimalParam)
                 {
-                    if (parametersToOptimize[i])
-                    {
-                        var param = individual.Parameters[i];
-                        
-                        if (param.Type == StrategyParameterType.Int)
-                        {
-                            var intParam = (StrategyParameterInt)param;
-                            var range = intParam.ValueIntStop - intParam.ValueIntStart;
-                            var mutation = (int)(range * 0.1 * (Random.NextDouble() - 0.5)); // 10% mutation
-                            intParam.ValueInt = Math.Max(intParam.ValueIntStart, 
-                                Math.Min(intParam.ValueIntStop, intParam.ValueInt + mutation));
-                        }
-                        else if (param.Type == StrategyParameterType.Decimal)
-                        {
-                            var decParam = (StrategyParameterDecimal)param;
-                            var range = decParam.ValueDecimalStop - decParam.ValueDecimalStart;
-                            var mutation = range * 0.1m * (decimal)(Random.NextDouble() - 0.5); // 10% mutation
-                            decParam.ValueDecimal = Math.Max(decParam.ValueDecimalStart, 
-                                Math.Min(decParam.ValueDecimalStop, decParam.ValueDecimal + mutation));
-                        }
-                        else if (param.Type == StrategyParameterType.Bool)
-                        {
-                            var boolParam = (StrategyParameterBool)param;
-                            if (Random.NextDouble() < 0.1) // 10% chance to flip
-                            {
-                                boolParam.ValueBool = !boolParam.ValueBool;
-                            }
-                        }
-                    }
+                    // For decimal parameters, add small random change
+                    double currentValue = (double)decimalParam.ValueDecimal;
+                    double range = (double)(decimalParam.ValueDecimalStop - decimalParam.ValueDecimalStart);
+                    double mutation = (_random.NextDouble() - 0.5) * range * 0.1; // 10% of range
+                    double newValue = Math.Max((double)decimalParam.ValueDecimalStart, 
+                                             Math.Min((double)decimalParam.ValueDecimalStop, currentValue + mutation));
+                    decimalParam.ValueDecimal = (decimal)newValue;
+                }
+                else if (parameter is StrategyParameterTimeOfDay timeParam)
+                {
+                    // For time parameters, randomly change time
+                    int totalMinutes = timeParam.Value.Hour * 60 + timeParam.Value.Minute;
+                    int mutation = _random.Next(-60, 61); // ±1 hour
+                    totalMinutes = Math.Max(0, Math.Min(1439, totalMinutes + mutation)); // 0-23:59
+                    timeParam.Value.Hour = totalMinutes / 60;
+                    timeParam.Value.Minute = totalMinutes % 60;
                 }
             }
             catch (Exception ex)
@@ -894,33 +864,39 @@ namespace OsEngine.OsOptimizer.Algorithms
             }
         }
 
+        #endregion
+
+        #region IDisposable Implementation
+
+        private bool _disposed = false;
+
         /// <summary>
-        /// Create a crossover individual from two parents.
-        /// Создать особь скрещивания от двух родителей.
+        /// Dispose of resources used by the genetic algorithm.
+        /// Освободить ресурсы, используемые генетическим алгоритмом.
         /// </summary>
-        /// <param name="parent1">First parent / Первый родитель</param>
-        /// <param name="parent2">Second parent / Второй родитель</param>
-        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
-        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
-        /// <returns>Crossover individual / Особь скрещивания</returns>
-        private Individual CreateCrossoverIndividual(Individual parent1, Individual parent2, List<IIStrategyParameter> parameters, List<bool> parametersToOptimize)
+        public void Dispose()
         {
-            // Use the existing Crossover method from Individual class
-            return parent1.Crossover(parent2, 0.8);
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
-        /// Clone an individual.
-        /// Клонировать особь.
+        /// Dispose of resources used by the genetic algorithm.
+        /// Освободить ресурсы, используемые генетическим алгоритмом.
         /// </summary>
-        /// <param name="individual">Individual to clone / Особь для клонирования</param>
-        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
-        /// <param name="parametersToOptimize">Parameters to optimize / Параметры для оптимизации</param>
-        /// <returns>Cloned individual / Клонированная особь</returns>
-        private Individual CloneIndividual(Individual individual, List<IIStrategyParameter> parameters, List<bool> parametersToOptimize)
+        /// <param name="disposing">True if called from Dispose(), false if called from finalizer / True если вызвано из Dispose(), false если вызвано из финализатора</param>
+        protected virtual void Dispose(bool disposing)
         {
-            // Use the existing Clone method from Individual class
-            return individual.Clone();
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    // Dispose managed resources
+                }
+                _disposed = true;
+            }
         }
+
+        #endregion
     }
 }

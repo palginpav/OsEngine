@@ -280,6 +280,16 @@ namespace OsEngine.OsOptimizer.Algorithms
         }
 
         /// <summary>
+        /// Stop the optimization process.
+        /// Остановить процесс оптимизации.
+        /// </summary>
+        public virtual void Stop()
+        {
+            // This is a virtual method that can be overridden by derived classes
+            // For now, we rely on the CancellationToken mechanism
+        }
+
+        /// <summary>
         /// Create a random individual for the given parameters.
         /// Создать случайную особь для заданных параметров.
         /// </summary>

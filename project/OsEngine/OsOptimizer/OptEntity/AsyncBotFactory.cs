@@ -31,26 +31,26 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
                 worker.Start();
             }
             
-            // Log thread configuration for performance monitoring
-            SendLogMessage($"AsyncBotFactory thread configuration: {optimalThreadCount} threads (CPU cores: {Environment.ProcessorCount})", LogMessageType.System);
         }
 
         private string _botLocker = "botLocker";
 
         public BotPanel GetBot(string botType, string botName)
         {
-            SendLogMessage($"AsyncBotFactory.GetBot: Starting with botType={botType}, botName={botName}", LogMessageType.System);
             BotPanel bot = null;
             int waitCount = 0;
+            DateTime startTime = DateTime.Now;
+            const int timeoutSeconds = 30; // 30 second timeout
 
             while (true)
             {
                 waitCount++;
                 
-                // Log progress every 5 seconds
-                if (waitCount % 5000 == 0)
+                // Check for timeout
+                if (startTime.AddSeconds(timeoutSeconds) < DateTime.Now)
                 {
-                    SendLogMessage($"AsyncBotFactory.GetBot: Still waiting for bot... ({waitCount}ms), _bots.Count={_bots.Count}, _isActivate={_isActivate}", LogMessageType.System);
+                    SendLogMessage($"GetBot: Timeout waiting for bot {botName} after {timeoutSeconds} seconds", LogMessageType.Error);
+                    return null;
                 }
                 
                 for (int i = 0; i < _bots.Count; i++)
@@ -69,19 +69,40 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
                             _bots.RemoveAt(i);
                         }
 
-                        SendLogMessage($"AsyncBotFactory.GetBot: Found and returning bot for {botName}", LogMessageType.System);
                         return bot;
                     }
                 }
-                Thread.Sleep(1);
+                
+                // Increase sleep time progressively to reduce CPU usage
+                if (waitCount < 100)
+                {
+                    Thread.Sleep(1);
+                }
+                else if (waitCount < 1000)
+                {
+                    Thread.Sleep(10);
+                }
+                else
+                {
+                    Thread.Sleep(100);
+                }
             }
         }
 
         public void CreateNewBots(List<string> botsName, string botType, bool isScript, StartProgram startProgram)
         {
-            SendLogMessage($"AsyncBotFactory.CreateNewBots: Starting with {botsName.Count} bots, botType={botType}", LogMessageType.System);
             _botType = botType;
             _isActivate = false;
+            
+            // Clear existing bot names to prevent conflicts
+            lock (_botLocker)
+            {
+                for (int i = 0; i < _botsToStart.Count; i++)
+                {
+                    _botsToStart[i].Clear();
+                }
+            }
+            
             for (int i = 0; i < _botsToStart.Count; i++)
             {
                 List<string> names = _botsToStart[i];
@@ -95,7 +116,68 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
             _isScript = isScript;
             _startProgram = startProgram;
             _isActivate = true;
-            SendLogMessage($"AsyncBotFactory.CreateNewBots: Activated bot creation for {botsName.Count} bots", LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Create a single bot synchronously for genetic algorithm use.
+        /// Создать одного бота синхронно для использования в генетическом алгоритме.
+        /// </summary>
+        /// <param name="botName">Bot name / Имя бота</param>
+        /// <param name="botType">Bot type / Тип бота</param>
+        /// <param name="isScript">Is script / Является ли скриптом</param>
+        /// <param name="startProgram">Start program / Программа запуска</param>
+        /// <returns>Created bot panel / Созданная панель бота</returns>
+        public BotPanel CreateSingleBot(string botName, string botType, bool isScript, StartProgram startProgram)
+        {
+            try
+            {
+                BotPanel bot = BotFactory.GetStrategyForName(botType, botName, startProgram, isScript);
+                
+                if (bot != null)
+                {
+                    lock (_botLocker)
+                    {
+                        _bots.Add(bot);
+                    }
+                }
+                
+                return bot;
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"CreateSingleBot: Exception creating bot {botName}: {ex.Message}", LogMessageType.Error);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Get a bot directly by name without waiting (for synchronous creation).
+        /// Получить бота напрямую по имени без ожидания (для синхронного создания).
+        /// </summary>
+        /// <param name="botType">Bot type / Тип бота</param>
+        /// <param name="botName">Bot name / Имя бота</param>
+        /// <returns>Bot panel or null / Панель бота или null</returns>
+        public BotPanel GetBotDirect(string botType, string botName)
+        {
+            lock (_botLocker)
+            {
+                for (int i = 0; i < _bots.Count; i++)
+                {
+                    if (_bots[i] == null)
+                    {
+                        continue;
+                    }
+
+                    if (_bots[i].NameStrategyUniq == botName &&
+                        _bots[i].GetNameStrategyType() == botType)
+                    {
+                        BotPanel bot = _bots[i];
+                        _bots.RemoveAt(i);
+                        return bot;
+                    }
+                }
+            }
+            return null;
         }
 
         private bool _isActivate;
@@ -157,23 +239,48 @@ namespace OsEngine.OsOptimizer.OptimizerEntity
 
         private void Load(List<string> names)
         {
-            while (names.Count != 0)
+            while (true)
             {
-
-                BotPanel bot = BotFactory.GetStrategyForName(_botType, names[0], _startProgram, _isScript);
+                string botName = null;
+                
+                // Thread-safe removal of first element
+                lock (_botLocker)
+                {
+                    if (names.Count == 0)
+                    {
+                        break;
+                    }
+                    botName = names[0];
+                    names.RemoveAt(0);
+                }
+                
+                if (string.IsNullOrEmpty(botName))
+                {
+                    continue;
+                }
+                
+                BotPanel bot = null;
 
                 try
                 {
-                    names.RemoveAt(0);
+                    bot = BotFactory.GetStrategyForName(_botType, botName, _startProgram, _isScript);
+                    
+                    if (bot == null)
+                    {
+                        SendLogMessage($"Load: Failed to create bot {botName}", LogMessageType.Error);
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore
+                    SendLogMessage($"Load: Exception creating bot {botName}: {ex.Message}", LogMessageType.Error);
                 }
 
-                lock (_botLocker)
+                if (bot != null)
                 {
-                    _bots.Add(bot);
+                    lock (_botLocker)
+                    {
+                        _bots.Add(bot);
+                    }
                 }
             }
         }

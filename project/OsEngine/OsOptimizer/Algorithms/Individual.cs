@@ -30,10 +30,16 @@ namespace OsEngine.OsOptimizer.Algorithms
         public double Fitness { get; set; }
 
         /// <summary>
-        /// Optimization report for this individual.
-        /// Отчет об оптимизации для этой особи.
+        /// Optimization report for this individual (InSample results).
+        /// Отчет об оптимизации для этой особи (результаты InSample).
         /// </summary>
         public OptimizerReport Report { get; set; }
+
+        /// <summary>
+        /// OutSample optimization report for this individual.
+        /// Отчет об оптимизации OutSample для этой особи.
+        /// </summary>
+        public OptimizerReport OutSampleReport { get; set; }
 
         /// <summary>
         /// Whether this individual has been evaluated.
@@ -80,6 +86,7 @@ namespace OsEngine.OsOptimizer.Algorithms
             {
                 Fitness = Fitness,
                 Report = Report,
+                OutSampleReport = OutSampleReport,
                 IsEvaluated = IsEvaluated,
                 Id = Guid.NewGuid()
             };
@@ -99,6 +106,7 @@ namespace OsEngine.OsOptimizer.Algorithms
             mutated.Generation = Generation + 1;
             mutated.IsEvaluated = false;
             mutated.Report = null;
+            mutated.OutSampleReport = null;
 
             var random = new Random();
 

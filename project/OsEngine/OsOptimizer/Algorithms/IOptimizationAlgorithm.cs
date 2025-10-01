@@ -69,6 +69,12 @@ namespace OsEngine.OsOptimizer.Algorithms
         void SetAlgorithmParameters(Dictionary<string, object> parameters);
 
         /// <summary>
+        /// Stop the optimization process.
+        /// Остановить процесс оптимизации.
+        /// </summary>
+        void Stop();
+
+        /// <summary>
         /// Event fired when optimization progress is updated.
         /// Событие, срабатывающее при обновлении прогресса оптимизации.
         /// </summary>

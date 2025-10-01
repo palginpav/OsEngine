@@ -145,7 +145,8 @@ namespace OsEngine.OsOptimizer
         {
             get
             {
-                string num = BotName.Replace(" OpT OutOfSample", "").Replace(" OpT InSample", "");
+                string num = BotName.Replace(" OpT OutOfSample", "").Replace(" OpT InSample", "")
+                                    .Replace(" OutOfSample", "").Replace(" InSample", "");
                 return Convert.ToInt32(num);
             }
 

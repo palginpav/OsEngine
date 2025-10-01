@@ -508,10 +508,14 @@ namespace OsEngine.OsOptimizer
                 }
                 
                 // Update the master with the new algorithm selection
+                _master.SendLogMessage($"ComboBoxAlgorithm_SelectionChanged: Setting algorithm to {selectedAlgorithmType} (was {_master.SelectedAlgorithm})", LogMessageType.System);
                 _master.SelectedAlgorithm = selectedAlgorithmType;
                 
                 // Update algorithm parameters UI
                 UpdateAlgorithmParameters();
+                
+                // Save the algorithm parameters to ensure persistence
+                _master.AlgorithmParameters = _master.AlgorithmParameters;
                 
                 _master.SendLogMessage($"Algorithm changed to: {selectedAlgorithmName}", LogMessageType.System);
             }
@@ -1811,12 +1815,15 @@ namespace OsEngine.OsOptimizer
 
                 var parameters = _master.AlgorithmParameters;
 
+                bool parameterUpdated = false;
+                
                 switch (parameterName)
                 {
                     case "Population Size":
                         if (int.TryParse(parameterValue, out int populationSize) && populationSize > 0)
                         {
                             parameters["PopulationSize"] = populationSize;
+                            parameterUpdated = true;
                         }
                         break;
 
@@ -1824,6 +1831,7 @@ namespace OsEngine.OsOptimizer
                         if (int.TryParse(parameterValue, out int maxGenerations) && maxGenerations > 0)
                         {
                             parameters["MaxGenerations"] = maxGenerations;
+                            parameterUpdated = true;
                         }
                         break;
 
@@ -1831,6 +1839,7 @@ namespace OsEngine.OsOptimizer
                         if (double.TryParse(parameterValue, out double mutationRate) && mutationRate >= 0 && mutationRate <= 1)
                         {
                             parameters["MutationRate"] = mutationRate;
+                            parameterUpdated = true;
                         }
                         break;
 
@@ -1838,8 +1847,16 @@ namespace OsEngine.OsOptimizer
                         if (double.TryParse(parameterValue, out double crossoverRate) && crossoverRate >= 0 && crossoverRate <= 1)
                         {
                             parameters["CrossoverRate"] = crossoverRate;
+                            parameterUpdated = true;
                         }
                         break;
+                }
+                
+                // Save parameters immediately if any were updated
+                if (parameterUpdated)
+                {
+                    _master.AlgorithmParameters = parameters;
+                    _master.SendLogMessage($"Algorithm parameter '{parameterName}' updated to: {parameterValue}", LogMessageType.System);
                 }
             }
             catch (Exception ex)

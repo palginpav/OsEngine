@@ -62,10 +62,149 @@ namespace OsEngine.OsOptimizer
             return true;
         }
 
+        /// <summary>
+        /// Set parameters for individual bot testing without starting full optimization.
+        /// Установить параметры для тестирования отдельных ботов без запуска полной оптимизации.
+        /// </summary>
+        /// <param name="parametersOn">Parameters to optimize / Параметры для оптимизации</param>
+        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
+        public void SetParameters(List<bool> parametersOn, List<IIStrategyParameter> parameters)
+        {
+            _parametersOn = parametersOn;
+            _parameters = parameters;
+            
+            // Initialize for individual bot testing
+            _servers = new List<OptimizerServer>();
+            _serverNum = 1;
+            _testBotsTime.Clear();
+            
+            SendLogMessage("OptimizerExecutor: Parameters set for individual bot testing", LogMessageType.System);
+        }
+
         public void Stop()
         {
             _needToStop = true;
             SendLogMessage(OsLocalization.Optimizer.Message3, LogMessageType.System);
+        }
+
+        /// <summary>
+        /// Get the AsyncBotFactory for individual bot creation.
+        /// Получить AsyncBotFactory для создания отдельных ботов.
+        /// </summary>
+        /// <returns>AsyncBotFactory instance / Экземпляр AsyncBotFactory</returns>
+        public AsyncBotFactory GetAsyncBotFactory()
+        {
+            return _asyncBotFactory;
+        }
+
+        /// <summary>
+        /// Test a single bot for genetic algorithm optimization with improved error handling.
+        /// Тестировать одного бота для оптимизации генетическим алгоритмом с улучшенной обработкой ошибок.
+        /// </summary>
+        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
+        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
+        /// <param name="originalBotName">Original bot name to preserve (optional) / Оригинальное имя бота для сохранения (опционально)</param>
+        /// <returns>Optimization report / Отчет об оптимизации</returns>
+        public OptimizerReport TestBotForGeneticAlgorithm(List<IIStrategyParameter> parameters, OptimizerFaze faze, string originalBotName = null)
+        {
+            try
+            {
+                // Generate bot name - preserve original name if provided, otherwise generate new one
+                string botName;
+                if (!string.IsNullOrEmpty(originalBotName))
+                {
+                    // Extract the numeric part from the original bot name (e.g., "151 InSample" -> "151")
+                    string numericPart = originalBotName.Split(' ')[0];
+                    string phaseSuffix = faze.TypeFaze == OptimizerFazeType.OutOfSample ? " OutOfSample" : " InSample";
+                    botName = numericPart + phaseSuffix;
+                }
+                else
+                {
+                    // Generate a new unique bot name with phase information
+                    string baseBotName = NumberGen.GetNumberDeal(StartProgram.IsOsOptimizer).ToString();
+                    string phaseSuffix = faze.TypeFaze == OptimizerFazeType.OutOfSample ? " OutOfSample" : " InSample";
+                    botName = baseBotName + phaseSuffix;
+                }
+                
+                // Create a temporary OptimizerReport with the individual's parameters
+                var tempReport = new OptimizerReport(parameters);
+                
+                // Create an OptimizerFazeReport for this test
+                var fazeReport = new OptimizerFazeReport();
+                fazeReport.Faze = faze;
+                
+                // Create an AwaitObject for the test
+                var awaitObj = new AwaitObject("Genetic Algorithm Bot Test", 100, 0, true);
+                
+                // Use the existing TestBot method
+                var bot = TestBot(fazeReport, tempReport, StartProgram.IsOsOptimizer, awaitObj);
+                
+                if (bot == null)
+                {
+                    return null;
+                }
+                
+                // Load the results from the bot into the report
+                fazeReport.Load(bot);
+                
+                // Get the results from the report and update the bot name
+                if (fazeReport.Reports.Count > 0)
+                {
+                    var result = fazeReport.Reports[fazeReport.Reports.Count - 1];
+                    result.BotName = botName; // Ensure the bot name includes phase information
+                    return result;
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"TestBotForGeneticAlgorithm: Error testing bot: {ex.Message}", LogMessageType.Error);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Create a new server for genetic algorithm testing.
+        /// Создать новый сервер для тестирования генетическим алгоритмом.
+        /// </summary>
+        /// <param name="faze">Optimization phase / Фаза оптимизации</param>
+        /// <returns>OptimizerServer instance / Экземпляр OptimizerServer</returns>
+        public OptimizerServer CreateServerForGeneticAlgorithm(OptimizerFaze faze)
+        {
+            try
+            {
+                var fazeReport = new OptimizerFazeReport();
+                fazeReport.Faze = faze;
+                
+                return CreateNewServer(fazeReport, false);
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"CreateServerForGeneticAlgorithm: Error creating server: {ex.Message}", LogMessageType.Error);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Create a new bot for genetic algorithm testing.
+        /// Создать нового бота для тестирования генетическим алгоритмом.
+        /// </summary>
+        /// <param name="botName">Bot name / Имя бота</param>
+        /// <param name="parameters">Strategy parameters / Параметры стратегии</param>
+        /// <param name="server">Optimizer server / Сервер оптимизатора</param>
+        /// <returns>BotPanel instance / Экземпляр BotPanel</returns>
+        public BotPanel CreateBotForGeneticAlgorithm(string botName, List<IIStrategyParameter> parameters, OptimizerServer server)
+        {
+            try
+            {
+                return CreateNewBot(botName, parameters, parameters, server, StartProgram.IsOsOptimizer);
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage($"CreateBotForGeneticAlgorithm: Error creating bot {botName}: {ex.Message}", LogMessageType.Error);
+                return null;
+            }
         }
 
         private bool _needToStop;
@@ -662,22 +801,15 @@ namespace OsEngine.OsOptimizer
         private void StartNewBot(List<IIStrategyParameter> parameters, List<IIStrategyParameter> parametersOptimized,
             OptimizerFazeReport report, string botName)
         {
-            SendLogMessage($"StartNewBot: Starting with botName={botName}", LogMessageType.System);
-            
-            SendLogMessage("StartNewBot: Creating new server", LogMessageType.System);
             OptimizerServer server = CreateNewServer(report, true);
-            SendLogMessage($"StartNewBot: Created server {server?.NumberServer}", LogMessageType.System);
 
             // Check if bot name starts with a number, if not prepend server number
             if (string.IsNullOrEmpty(botName) || !char.IsDigit(botName[0]))
             {
                 botName = server.NumberServer + botName;
-                SendLogMessage($"StartNewBot: Updated botName to {botName}", LogMessageType.System);
             }
 
-            SendLogMessage("StartNewBot: Creating new bot", LogMessageType.System);
             BotPanel bot = CreateNewBot(botName, parameters, parametersOptimized, server, StartProgram.IsOsOptimizer);
-            SendLogMessage($"StartNewBot: Created bot, IsConnected={bot?.IsConnected}", LogMessageType.System);
 
             if (bot == null)
             {
@@ -687,25 +819,18 @@ namespace OsEngine.OsOptimizer
 
             // wait for the robot to connect to its data server
             // ждём пока робот подключиться к своему серверу данных
-            SendLogMessage("StartNewBot: Starting bot connection wait loop", LogMessageType.System);
 
             DateTime timeStartWaiting = DateTime.Now;
             int waitCount = 0;
 
             while (bot.IsConnected == false)
             {
-                Thread.Sleep(1);
+                Thread.Sleep(100); // Increased sleep time to reduce CPU usage
                 waitCount++;
 
-                // Log progress every 5 seconds
-                if (waitCount % 5000 == 0)
+                if (timeStartWaiting.AddSeconds(60) < DateTime.Now) // Reduced timeout from 2000 to 60 seconds for consistency
                 {
-                    SendLogMessage($"StartNewBot: Still waiting for bot connection... ({waitCount}ms), bot.IsConnected={bot.IsConnected}", LogMessageType.System);
-                }
-
-                if (timeStartWaiting.AddSeconds(2000) < DateTime.Now)
-                {
-                    SendLogMessage($"StartNewBot: Bot connection timeout after 2000 seconds, bot.IsConnected={bot.IsConnected}", LogMessageType.Error);
+                    SendLogMessage($"StartNewBot: Bot connection timeout after 60 seconds for bot {botName}, bot.IsConnected={bot.IsConnected}", LogMessageType.Error);
                     SendLogMessage(
                         OsLocalization.Optimizer.Message10,
                         LogMessageType.Error);
@@ -713,18 +838,13 @@ namespace OsEngine.OsOptimizer
                 }
             }
 
-            SendLogMessage("StartNewBot: Bot connected successfully, adding to test list", LogMessageType.System);
             lock (_serverRemoveLocker)
             {
                 _botsInTest.Add(bot);
             }
 
-            SendLogMessage("StartNewBot: Sleeping 200ms before starting test", LogMessageType.System);
             Thread.Sleep(200);
-
-            SendLogMessage("StartNewBot: Starting server test", LogMessageType.System);
             server.TestingStart();
-            SendLogMessage("StartNewBot: Server test started, method completed", LogMessageType.System);
         }
 
         private List<BotPanel> _botsInTest = new List<BotPanel>();
@@ -806,30 +926,37 @@ namespace OsEngine.OsOptimizer
             List<IIStrategyParameter> parametersOptimized,
             OptimizerServer server, StartProgram regime)
         {
-            SendLogMessage($"CreateNewBot: Starting with botName={botName}, strategyName={_master.StrategyName}", LogMessageType.System);
             BotPanel bot = null;
 
             try
             {
-            SendLogMessage("CreateNewBot: Creating new bot via AsyncBotFactory", LogMessageType.System);
-            // First, tell the factory to create the bot
-            List<string> botNames = new List<string> { botName };
-            _asyncBotFactory.CreateNewBots(botNames, _master.StrategyName, _master.IsScript, StartProgram.IsOsOptimizer);
-            
-            SendLogMessage("CreateNewBot: Getting bot from AsyncBotFactory", LogMessageType.System);
-            bot = _asyncBotFactory.GetBot(_master.StrategyName, botName);
-            SendLogMessage($"CreateNewBot: Got bot, Parameters.Count={bot?.Parameters?.Count}", LogMessageType.System);
+                // Use the new single bot creation method for better thread safety
+                bot = _asyncBotFactory.CreateSingleBot(botName, _master.StrategyName, _master.IsScript, StartProgram.IsOsOptimizer);
+
+                if (bot == null)
+                {
+                    SendLogMessage($"CreateNewBot: Failed to create bot {botName}", LogMessageType.Error);
+                    return null;
+                }
+
+                // Get the bot directly since we created it synchronously
+                bot = _asyncBotFactory.GetBotDirect(_master.StrategyName, botName);
+
+                if (bot == null)
+                {
+                    SendLogMessage($"CreateNewBot: Failed to retrieve bot {botName} after creation", LogMessageType.Error);
+                    return null;
+                }
 
                 if (bot.Parameters.Count != parameters.Count)
                 {
-                    SendLogMessage($"CreateNewBot: Parameter count mismatch - bot has {bot.Parameters.Count}, expected {parameters.Count}", LogMessageType.Error);
+                    SendLogMessage($"CreateNewBot: Parameter count mismatch for bot {botName}. Expected: {parameters.Count}, Got: {bot.Parameters.Count}", LogMessageType.Error);
                     return null;
                 }
             }
             catch (Exception ex)
             {
-                SendLogMessage($"CreateNewBot: Exception getting bot: {ex.Message}", LogMessageType.Error);
-                SendLogMessage(ex.ToString(), LogMessageType.Error);
+                SendLogMessage($"CreateNewBot: Exception creating bot {botName}: {ex.Message}", LogMessageType.Error);
                 return null;
             }
 
@@ -969,7 +1096,6 @@ namespace OsEngine.OsOptimizer
                     }
                 }
 
-                SendLogMessage($"CreateNewBot: Successfully configured bot, IsConnected={bot?.IsConnected}", LogMessageType.System);
                 return bot;
             }
             catch (Exception ex)
@@ -1129,11 +1255,11 @@ namespace OsEngine.OsOptimizer
 
             while (bot.IsConnected == false)
             {
-                Thread.Sleep(50);
+                Thread.Sleep(100); // Increased sleep time to reduce CPU usage
 
-                if (timeStartWaiting.AddSeconds(20) < DateTime.Now)
+                if (timeStartWaiting.AddSeconds(60) < DateTime.Now) // Increased timeout from 20 to 60 seconds
                 {
-
+                    SendLogMessage($"TestBot: Bot connection timeout after 60 seconds for bot {botName}", LogMessageType.Error);
                     SendLogMessage(
                         OsLocalization.Optimizer.Message10,
                         LogMessageType.Error);
@@ -1201,7 +1327,6 @@ namespace OsEngine.OsOptimizer
 
         private void server_TestingEndEvent(int serverNum, TimeSpan testTime)
         {
-            SendLogMessage($"server_TestingEndEvent: Server {serverNum} test completed, ReportsToFazes.Count={ReportsToFazes.Count}", LogMessageType.System);
             TestingProgressChangeEvent?.Invoke(100, 100, serverNum);
             _countAllServersEndTest++;
             PrimeProgressChangeEvent?.Invoke(_countAllServersEndTest, _countAllServersMax);
@@ -1242,7 +1367,7 @@ namespace OsEngine.OsOptimizer
                 }
                 else if (bot != null && ReportsToFazes.Count == 0)
                 {
-                    SendLogMessage($"server_TestingEndEvent: No reports available to load bot results for server {serverNum}", LogMessageType.Error);
+                    // No reports available
                 }
 
                 for (int i = 0; i < _servers.Count; i++)
