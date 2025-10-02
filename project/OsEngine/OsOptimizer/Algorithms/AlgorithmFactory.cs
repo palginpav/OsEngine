@@ -30,21 +30,6 @@ namespace OsEngine.OsOptimizer.Algorithms
             /// Standard Genetic Algorithm / Стандартный генетический алгоритм
             /// </summary>
             StandardGeneticAlgorithm,
-
-            /// <summary>
-            /// NEAT (NeuroEvolution of Augmenting Topologies) / NEAT (нейроэволюция увеличивающихся топологий)
-            /// </summary>
-            NEAT,
-
-            /// <summary>
-            /// Particle Swarm Optimization / Оптимизация роя частиц
-            /// </summary>
-            ParticleSwarmOptimization,
-
-            /// <summary>
-            /// Differential Evolution / Дифференциальная эволюция
-            /// </summary>
-            DifferentialEvolution
         }
 
         /// <summary>
@@ -54,7 +39,12 @@ namespace OsEngine.OsOptimizer.Algorithms
         /// <returns>List of available algorithm types / Список доступных типов алгоритмов</returns>
         public static List<AlgorithmType> GetAvailableAlgorithms()
         {
-            return Enum.GetValues(typeof(AlgorithmType)).Cast<AlgorithmType>().ToList();
+            // Only return implemented algorithms
+            return new List<AlgorithmType>
+            {
+                AlgorithmType.BruteForce,
+                AlgorithmType.StandardGeneticAlgorithm
+            };
         }
 
         /// <summary>
@@ -104,68 +94,6 @@ namespace OsEngine.OsOptimizer.Algorithms
                         }
                     };
 
-                case AlgorithmType.NEAT:
-                    return new AlgorithmInfo
-                    {
-                        Type = algorithmType,
-                        Name = "NEAT (NeuroEvolution of Augmenting Topologies)",
-                        Description = "Evolves neural network topologies along with weights. Excellent for complex, non-linear optimization problems.",
-                        SupportsMultiObjective = true,
-                        RecommendedFor = "Complex neural network strategies, non-linear parameter relationships",
-                        DefaultParameters = new Dictionary<string, object>
-                        {
-                            ["PopulationSize"] = 100,
-                            ["MaxGenerations"] = 200,
-                            ["EliteCount"] = 10,
-                            ["CrossoverRate"] = 0.75,
-                            ["MutationRate"] = 0.1,
-                            ["AddNodeMutationRate"] = 0.03,
-                            ["AddConnectionMutationRate"] = 0.05,
-                            ["WeightMutationRate"] = 0.8,
-                            ["CompatibilityThreshold"] = 3.0,
-                            ["SpeciesCount"] = 15
-                        }
-                    };
-
-                case AlgorithmType.ParticleSwarmOptimization:
-                    return new AlgorithmInfo
-                    {
-                        Type = algorithmType,
-                        Name = "Particle Swarm Optimization",
-                        Description = "Swarm intelligence algorithm inspired by bird flocking. Good for continuous parameter optimization.",
-                        SupportsMultiObjective = true,
-                        RecommendedFor = "Continuous parameter spaces, smooth fitness landscapes",
-                        DefaultParameters = new Dictionary<string, object>
-                        {
-                            ["SwarmSize"] = 30,
-                            ["MaxIterations"] = 100,
-                            ["InertiaWeight"] = 0.9,
-                            ["CognitiveWeight"] = 2.0,
-                            ["SocialWeight"] = 2.0,
-                            ["MaxVelocity"] = 0.1,
-                            ["ConvergenceThreshold"] = 0.001
-                        }
-                    };
-
-                case AlgorithmType.DifferentialEvolution:
-                    return new AlgorithmInfo
-                    {
-                        Type = algorithmType,
-                        Name = "Differential Evolution",
-                        Description = "Robust global optimization algorithm. Good for noisy fitness landscapes and constrained optimization.",
-                        SupportsMultiObjective = true,
-                        RecommendedFor = "Noisy fitness functions, constrained optimization, global optimization",
-                        DefaultParameters = new Dictionary<string, object>
-                        {
-                            ["PopulationSize"] = 50,
-                            ["MaxGenerations"] = 100,
-                            ["CrossoverRate"] = 0.9,
-                            ["DifferentialWeight"] = 0.8,
-                            ["Strategy"] = "DE/rand/1/bin",
-                            ["ConvergenceThreshold"] = 0.001
-                        }
-                    };
-
                 default:
                     throw new ArgumentException($"Unknown algorithm type: {algorithmType}");
             }
@@ -184,21 +112,9 @@ namespace OsEngine.OsOptimizer.Algorithms
                 case AlgorithmType.StandardGeneticAlgorithm:
                     return new StandardGeneticAlgorithm();
 
-                case AlgorithmType.NEAT:
-                    // TODO: Implement NEAT algorithm
-                    throw new NotImplementedException("NEAT algorithm not yet implemented");
-
-                case AlgorithmType.ParticleSwarmOptimization:
-                    // TODO: Implement PSO algorithm
-                    throw new NotImplementedException("Particle Swarm Optimization algorithm not yet implemented");
-
-                case AlgorithmType.DifferentialEvolution:
-                    // TODO: Implement DE algorithm
-                    throw new NotImplementedException("Differential Evolution algorithm not yet implemented");
-
                 case AlgorithmType.BruteForce:
-                    // TODO: Implement BruteForce algorithm wrapper
-                    throw new NotImplementedException("BruteForce algorithm wrapper not yet implemented");
+                    // BruteForce uses the traditional OptimizerExecutor directly, not this interface
+                    throw new InvalidOperationException("BruteForce algorithm uses traditional OptimizerExecutor and should not be created through this method");
 
                 default:
                     throw new ArgumentException($"Unknown algorithm type: {algorithmType}");
@@ -226,25 +142,7 @@ namespace OsEngine.OsOptimizer.Algorithms
                 return AlgorithmType.BruteForce;
             }
 
-            // For neural network strategies or complex topologies
-            if (parameterTypes.Contains("NeuralNetwork") || parameterTypes.Contains("Topology"))
-            {
-                return AlgorithmType.NEAT;
-            }
-
-            // For continuous parameters with smooth landscapes
-            if (parameterTypes.All(t => t == "Decimal" || t == "Int"))
-            {
-                return AlgorithmType.ParticleSwarmOptimization;
-            }
-
-            // For mixed parameter types or multi-objective optimization
-            if (multiObjective || parameterTypes.Count > 2)
-            {
-                return AlgorithmType.StandardGeneticAlgorithm;
-            }
-
-            // Default recommendation
+            // For larger parameter spaces or multi-objective optimization, use genetic algorithm
             return AlgorithmType.StandardGeneticAlgorithm;
         }
 
@@ -263,18 +161,6 @@ namespace OsEngine.OsOptimizer.Algorithms
             {
                 case AlgorithmType.StandardGeneticAlgorithm:
                     ValidateGeneticAlgorithmParameters(parameters, result);
-                    break;
-
-                case AlgorithmType.NEAT:
-                    ValidateNEATParameters(parameters, result);
-                    break;
-
-                case AlgorithmType.ParticleSwarmOptimization:
-                    ValidatePSOParameters(parameters, result);
-                    break;
-
-                case AlgorithmType.DifferentialEvolution:
-                    ValidateDEParameters(parameters, result);
                     break;
 
                 case AlgorithmType.BruteForce:
@@ -333,32 +219,6 @@ namespace OsEngine.OsOptimizer.Algorithms
             }
         }
 
-        /// <summary>
-        /// Validate NEAT parameters.
-        /// Проверить параметры NEAT.
-        /// </summary>
-        private static void ValidateNEATParameters(Dictionary<string, object> parameters, ValidationResult result)
-        {
-            // TODO: Implement NEAT parameter validation
-        }
-
-        /// <summary>
-        /// Validate PSO parameters.
-        /// Проверить параметры PSO.
-        /// </summary>
-        private static void ValidatePSOParameters(Dictionary<string, object> parameters, ValidationResult result)
-        {
-            // TODO: Implement PSO parameter validation
-        }
-
-        /// <summary>
-        /// Validate DE parameters.
-        /// Проверить параметры DE.
-        /// </summary>
-        private static void ValidateDEParameters(Dictionary<string, object> parameters, ValidationResult result)
-        {
-            // TODO: Implement DE parameter validation
-        }
 
         /// <summary>
         /// Validate brute force parameters.
@@ -366,7 +226,8 @@ namespace OsEngine.OsOptimizer.Algorithms
         /// </summary>
         private static void ValidateBruteForceParameters(Dictionary<string, object> parameters, ValidationResult result)
         {
-            // TODO: Implement brute force parameter validation
+            // BruteForce algorithm doesn't have specific parameters - it uses the traditional OptimizerExecutor
+            // All validation is handled by the existing parameter validation system
         }
     }
 
