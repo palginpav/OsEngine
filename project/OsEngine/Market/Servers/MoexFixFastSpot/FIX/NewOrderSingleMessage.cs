@@ -18,7 +18,9 @@ namespace OsEngine.Market.Servers.MoexFixFastSpot.FIX
         public string TransactTime; // UTCTimestamp
         public string OrdType;
         public string OrderQty;
+#pragma warning disable CS0649 // Field 'PriceType' is never assigned to, and will always have its default value null
         public string PriceType;
+#pragma warning restore CS0649
         public string Price = "0";
 
         public override string ToString()

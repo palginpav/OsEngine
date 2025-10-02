@@ -6,7 +6,9 @@ namespace OsEngine.Market.Servers.MoexFixFastSpot.FIX
     {
 
         public string ClOrdID;
+#pragma warning disable CS0649 // Field 'SecondaryClOrdID' is never assigned to, and will always have its default value null
         public string SecondaryClOrdID;
+#pragma warning restore CS0649
         public string MassCancelRequestType = "7"; // 1 - cancel for security, 7 - cancel for all matching orders
         public string TradingSessionID;
         public string Symbol;

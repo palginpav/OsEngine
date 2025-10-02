@@ -225,7 +225,9 @@ namespace OsEngine.OsTrader
         private TabControl _tabBotTab;
         private ConnectorWorkType _typeWorkKeeper;
         private TextBox _textBoxLimitPrice;
+#pragma warning disable CS0649 // Field '_textBoxVolume' is never assigned to, and will always have its default value null
         private TextBox _textBoxVolume;
+#pragma warning restore CS0649
         private Grid _gridChartControlPanel;
         private TabControl _tabControlControl;
         private WindowsFormsHost _hostGrids;

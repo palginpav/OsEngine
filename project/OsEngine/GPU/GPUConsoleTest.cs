@@ -21,15 +21,19 @@ namespace OsEngine.GPU
         
         /// <summary>
         /// Main entry point for GPU console test application.
+        /// Only available when building as console application to avoid conflicts with WPF App.Main().
         /// Главная точка входа для консольного приложения тестирования GPU.
+        /// Доступна только при сборке как консольное приложение, чтобы избежать конфликтов с WPF App.Main().
         /// </summary>
         /// <param name="args">Command line arguments / Аргументы командной строки</param>
         /// <returns>Exit code / Код выхода</returns>
+#if CONSOLE_APP
         public static async Task<int> Main(string[] args)
         {
             var consoleTest = new GPUConsoleTest();
             return await consoleTest.RunAsync(args);
         }
+#endif
         
         /// <summary>
         /// Runs the GPU console test application with specified arguments.

@@ -53,14 +53,17 @@ namespace OsEngine.GPU
         /// <exception cref="GPUInitializationException">Thrown when GPU initialization fails</exception>
         public async Task<bool> InitializeAsync()
         {
-            lock (_initializationLock)
+            // Use Task.Run to properly handle CPU-bound GPU initialization work asynchronously
+            return await Task.Run(() =>
             {
-                if (_isInitialized)
+                lock (_initializationLock)
                 {
-                    return true;
-                }
-                
-                try
+                    if (_isInitialized)
+                    {
+                        return true;
+                    }
+                    
+                    try
                 {
                     SendLogMessage("Initializing ILGPU acceleration system...", LogMessageType.System);
                     
@@ -150,7 +153,8 @@ namespace OsEngine.GPU
                     SendLogMessage($"ILGPU initialization failed: {ex.Message}", LogMessageType.Error);
                     throw new GPUInitializationException($"ILGPU initialization failed: {ex.Message}", ex);
                 }
-            }
+                }
+            });
         }
 
         /// <summary>

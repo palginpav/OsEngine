@@ -2038,7 +2038,9 @@ namespace OsEngine.Market.Servers.KuCoin.KuCoinFutures
             try
             {
                 string posSide = "BOTH";
+#pragma warning disable CS0219 // The variable 'closeOrder' is assigned but its value is never used
                 string closeOrder = "false";
+#pragma warning restore CS0219
 
                 if (HedgeMode)
                 {

@@ -26,7 +26,9 @@ namespace OsEngine.OsOptimizer.Algorithms
         private OptimizerMaster _optimizerMaster;
         private Random _random;
         private Population _population;
+#pragma warning disable CS0414 // The field '_currentFaze' is assigned but its value is never used
         private int _currentFaze;
+#pragma warning restore CS0414
         private int _zeroTradeBots;
         private OptimizerFaze _currentOptimizerFaze;
         private bool _needToStop;

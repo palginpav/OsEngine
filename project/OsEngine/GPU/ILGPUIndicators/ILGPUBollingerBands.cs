@@ -170,43 +170,47 @@ namespace OsEngine.GPU.ILGPUIndicators
         /// <returns>Tuple of upper, middle, and lower band arrays / Кортеж массивов верхней, средней и нижней полос</returns>
         private async Task<(float[] upperBand, float[] middleBand, float[] lowerBand)> CalculateBollingerBandsOnGPUAsync(float[] inputData)
         {
-            // Allocate GPU memory
-            using var inputBuffer = _accelerator.Allocate1D(inputData);
-            using var upperBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
-            using var middleBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
-            using var lowerBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
+            // Use Task.Run to properly handle CPU-bound GPU work asynchronously
+            return await Task.Run(() =>
+            {
+                // Allocate GPU memory
+                using var inputBuffer = _accelerator.Allocate1D(inputData);
+                using var upperBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
+                using var middleBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
+                using var lowerBandBuffer = _accelerator.Allocate1D<float>(inputData.Length);
 
-            // Execute Bollinger Bands calculation kernel
-            var bollingerKernel = _accelerator.LoadAutoGroupedStreamKernel<
-                Index1D,
-                ArrayView1D<float, Stride1D.Dense>,
-                ArrayView1D<float, Stride1D.Dense>,
-                ArrayView1D<float, Stride1D.Dense>,
-                ArrayView1D<float, Stride1D.Dense>,
-                int,
-                float>(BollingerBandsKernel);
+                // Execute Bollinger Bands calculation kernel
+                var bollingerKernel = _accelerator.LoadAutoGroupedStreamKernel<
+                    Index1D,
+                    ArrayView1D<float, Stride1D.Dense>,
+                    ArrayView1D<float, Stride1D.Dense>,
+                    ArrayView1D<float, Stride1D.Dense>,
+                    ArrayView1D<float, Stride1D.Dense>,
+                    int,
+                    float>(BollingerBandsKernel);
 
-            bollingerKernel(
-                (int)inputBuffer.Length,
-                inputBuffer.View,
-                upperBandBuffer.View,
-                middleBandBuffer.View,
-                lowerBandBuffer.View,
-                _period,
-                _standardDeviationMultiplier);
+                bollingerKernel(
+                    (int)inputBuffer.Length,
+                    inputBuffer.View,
+                    upperBandBuffer.View,
+                    middleBandBuffer.View,
+                    lowerBandBuffer.View,
+                    _period,
+                    _standardDeviationMultiplier);
 
-            _accelerator.Synchronize();
+                _accelerator.Synchronize();
 
-            // Copy results back to CPU
-            var upperBand = new float[inputData.Length];
-            var middleBand = new float[inputData.Length];
-            var lowerBand = new float[inputData.Length];
+                // Copy results back to CPU
+                var upperBand = new float[inputData.Length];
+                var middleBand = new float[inputData.Length];
+                var lowerBand = new float[inputData.Length];
 
-            upperBandBuffer.CopyToCPU(upperBand);
-            middleBandBuffer.CopyToCPU(middleBand);
-            lowerBandBuffer.CopyToCPU(lowerBand);
+                upperBandBuffer.CopyToCPU(upperBand);
+                middleBandBuffer.CopyToCPU(middleBand);
+                lowerBandBuffer.CopyToCPU(lowerBand);
 
-            return (upperBand, middleBand, lowerBand);
+                return (upperBand, middleBand, lowerBand);
+            });
         }
 
         /// <summary>

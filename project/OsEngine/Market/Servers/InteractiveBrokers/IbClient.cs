@@ -82,10 +82,11 @@ namespace OsEngine.Market.Servers.InteractiveBrokers
 
                 if (_listenThread == null)
                 {
+                    _cancellationTokenSource = new CancellationTokenSource();
                     _listenThread = new Thread(ListenThreadSpace);
                     _listenThread.CurrentCulture = CultureInfo.InvariantCulture;
                     _listenThread.IsBackground = false;
-                    _listenThread.Start();
+                    _listenThread.Start(_cancellationTokenSource.Token);
                 }
 
                 if (ConnectionSuccess != null)
@@ -132,11 +133,24 @@ namespace OsEngine.Market.Servers.InteractiveBrokers
             {
                 try
                 {
-                    _listenThread.Abort();
+                    // Request cancellation instead of aborting the thread
+                    _cancellationTokenSource?.Cancel();
+                    
+                    // Give the thread a moment to respond to cancellation
+                    if (_listenThread.IsAlive)
+                    {
+                        _listenThread.Join(1000); // Wait up to 1 second for graceful shutdown
+                    }
                 }
                 catch
                 {
                     // ignore
+                }
+                finally
+                {
+                    _cancellationTokenSource?.Dispose();
+                    _cancellationTokenSource = null;
+                    _listenThread = null;
                 }
             }
 
@@ -669,17 +683,25 @@ namespace OsEngine.Market.Servers.InteractiveBrokers
         #region Read thread
 
         private Thread _listenThread;
+        private CancellationTokenSource _cancellationTokenSource;
 
-        private void ListenThreadSpace()
+        private void ListenThreadSpace(object cancellationTokenObj)
         {
+            CancellationToken cancellationToken = (CancellationToken)cancellationTokenObj;
             int zeroMessagesCount = 0;
 
             int previousMessage;
             int typeMessage = -1;
-            while (true)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
+                    // Check for cancellation before doing work
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
                     Thread.Sleep(0);
                     previousMessage = typeMessage;
 

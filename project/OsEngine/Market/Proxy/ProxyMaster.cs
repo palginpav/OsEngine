@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
@@ -379,29 +380,100 @@ namespace OsEngine.Market.Proxy
 
         private Thread _pingThread;
 
+        /// <summary>
+        /// Checks internet connectivity using HttpClient
+        /// Проверяет подключение к интернету с помощью HttpClient
+        /// </summary>
+        /// <param name="url">URL to test connectivity / URL для проверки подключения</param>
+        /// <returns>True if connection is successful, false otherwise / True если подключение успешно, false в противном случае</returns>
+        private bool CheckInternetConnectivity(string url)
+        {
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    httpClient.Timeout = TimeSpan.FromSeconds(10); // Set reasonable timeout
+                    var response = httpClient.GetAsync(url).Result;
+                    return response.IsSuccessStatusCode;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Tests proxy connectivity using HttpClient
+        /// Тестирует подключение через прокси с помощью HttpClient
+        /// </summary>
+        /// <param name="url">URL to test / URL для тестирования</param>
+        /// <param name="proxy">Proxy settings / Настройки прокси</param>
+        /// <returns>True if connection is successful, false otherwise / True если подключение успешно, false в противном случае</returns>
+        private bool TestProxyConnectivity(string url, ProxyOsa proxy)
+        {
+            try
+            {
+                // Configure proxy if available
+                WebProxy myProxy = proxy.GetWebProxy();
+                HttpClient httpClient;
+                
+                if (myProxy != null)
+                {
+                    var httpClientHandler = new HttpClientHandler()
+                    {
+                        Proxy = myProxy,
+                        UseProxy = true
+                    };
+                    httpClient = new HttpClient(httpClientHandler);
+                }
+                else
+                {
+                    httpClient = new HttpClient();
+                }
+                
+                using (httpClient)
+                {
+                    httpClient.Timeout = TimeSpan.FromSeconds(10); // Set reasonable timeout
+                    var response = httpClient.GetAsync(url).Result;
+                    return response.IsSuccessStatusCode;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Downloads string content from URL using HttpClient
+        /// Загружает строковое содержимое с URL с помощью HttpClient
+        /// </summary>
+        /// <param name="url">URL to download from / URL для загрузки</param>
+        /// <returns>Downloaded string content or null if failed / Загруженное строковое содержимое или null при ошибке</returns>
+        private string DownloadStringFromUrl(string url)
+        {
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    httpClient.Timeout = TimeSpan.FromSeconds(10); // Set reasonable timeout
+                    return httpClient.GetStringAsync(url).Result;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private void CheckPingThreadArea()
         {
             try
             {
                 // 1 сначала просто проверяем интернет
 
-                WebRequest request = null;
-                request = (WebRequest)WebRequest.Create("https://www.moex.com");
-
-                bool haveError = false;
-
-                try
-                {
-                    HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                    if (response == null || response.StatusCode != HttpStatusCode.OK)
-                    {
-                        haveError = true;
-                    }
-                }
-                catch
-                {
-                    haveError = true;
-                }
+                bool haveError = !CheckInternetConnectivity("https://www.moex.com");
 
                 if (haveError)
                 {
@@ -464,30 +536,7 @@ namespace OsEngine.Market.Proxy
 
             string address = proxy.PingWebAddress;
 
-            WebRequest request = null;
-            request = (WebRequest)WebRequest.Create(address);
-
-            WebProxy myProxy = proxy.GetWebProxy();
-
-            if (myProxy != null)
-            {
-                request.Proxy = myProxy;
-            }
-
-            bool haveError = false;
-
-            try
-            {
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                if (response == null || response.StatusCode != HttpStatusCode.OK)
-                {
-                    haveError = true;
-                }
-            }
-            catch
-            {
-                haveError = true;
-            }
+            bool haveError = !TestProxyConnectivity(address, proxy);
 
             if (haveError)
             {
@@ -525,23 +574,7 @@ namespace OsEngine.Market.Proxy
             {
                 // 1 сначала просто проверяем интернет
 
-                WebRequest request = null;
-                request = (WebRequest)WebRequest.Create("https://www.moex.com");
-
-                bool haveError = false;
-
-                try
-                {
-                    HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                    if (response == null || response.StatusCode != HttpStatusCode.OK)
-                    {
-                        haveError = true;
-                    }
-                }
-                catch
-                {
-                    haveError = true;
-                }
+                bool haveError = !CheckInternetConnectivity("https://www.moex.com");
 
                 if (haveError)
                 {
@@ -585,10 +618,17 @@ namespace OsEngine.Market.Proxy
             IpInfo ipInfo = new IpInfo();
             try
             {
-                string info = new WebClient().DownloadString("http://ipinfo.io/" + proxy.Ip);
-                ipInfo = JsonConvert.DeserializeObject<IpInfo>(info);
-                RegionInfo myRI1 = new RegionInfo(ipInfo.Country);
-                ipInfo.Country = myRI1.EnglishName;
+                string info = DownloadStringFromUrl("http://ipinfo.io/" + proxy.Ip);
+                if (info != null)
+                {
+                    ipInfo = JsonConvert.DeserializeObject<IpInfo>(info);
+                    RegionInfo myRI1 = new RegionInfo(ipInfo.Country);
+                    ipInfo.Country = myRI1.EnglishName;
+                }
+                else
+                {
+                    ipInfo.Country = null;
+                }
             }
             catch
             {

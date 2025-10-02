@@ -6,6 +6,7 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 
 namespace OsEngine.Logging
@@ -145,6 +146,85 @@ namespace OsEngine.Logging
         // Calling request method. Generates URL and makes 3 attempts to read
         // Метод вызова запроса. Формирует URL и делает 3 попытки чтения
 
+        /// <summary>
+        /// Sends HTTP request using HttpClient (replaces WebRequest)
+        /// Отправляет HTTP запрос с помощью HttpClient (заменяет WebRequest)
+        /// </summary>
+        /// <param name="url">Request URL / URL запроса</param>
+        /// <param name="isPost">Whether to use POST method / Использовать ли POST метод</param>
+        /// <param name="postData">POST data for form submission / Данные POST для отправки формы</param>
+        /// <param name="files">Files to upload (for multipart) / Файлы для загрузки (для multipart)</param>
+        /// <returns>Response content or null if failed / Содержимое ответа или null при ошибке</returns>
+        private string SendHttpRequest(string url, bool isPost, byte[] postData, string[] files)
+        {
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    httpClient.Timeout = TimeSpan.FromSeconds(30); // Set reasonable timeout for SMS
+                    
+                    if (isPost)
+                    {
+                        if (files == null)
+                        {
+                            // Simple POST with form data
+                            var content = new StringContent(Encoding.UTF8.GetString(postData), Encoding.UTF8, "application/x-www-form-urlencoded");
+                            var response = httpClient.PostAsync(url, content).Result;
+                            return response.Content.ReadAsStringAsync().Result;
+                        }
+                        else
+                        {
+                            // Multipart POST with files
+                            var multipartContent = new MultipartFormDataContent();
+                            
+                            // Parse form data
+                            string[] par = Encoding.UTF8.GetString(postData).Split('&');
+                            int fl = files.Length;
+                            
+                            for (int pcnt = 0; pcnt < par.Length + fl; pcnt++)
+                            {
+                                bool isFile = pcnt < fl;
+                                
+                                if (isFile)
+                                {
+                                    // Add file
+                                    string fileName = Path.GetFileName(files[pcnt]);
+                                    var fileContent = new ByteArrayContent(File.ReadAllBytes(files[pcnt]));
+                                    fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                                    multipartContent.Add(fileContent, "File" + (pcnt + 1), fileName);
+                                }
+                                else
+                                {
+                                    // Add form field
+                                    string[] nv = par[pcnt - fl].Split('=');
+                                    if (nv.Length == 2)
+                                    {
+                                        var fieldContent = new StringContent(nv[1], Encoding.UTF8);
+                                        fieldContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+                                        fieldContent.Headers.ContentType.CharSet = SmscCharset;
+                                        multipartContent.Add(fieldContent, nv[0]);
+                                    }
+                                }
+                            }
+                            
+                            var response = httpClient.PostAsync(url, multipartContent).Result;
+                            return response.Content.ReadAsStringAsync().Result;
+                        }
+                    }
+                    else
+                    {
+                        // GET request
+                        var response = httpClient.GetAsync(url).Result;
+                        return response.Content.ReadAsStringAsync().Result;
+                    }
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private string[] _smsc_send_cmd(string cmd, string arg, string[] files = null)
         {
             arg = "login=" + _urlencode(SmscLogin) + "&psw=" + _urlencode(SmscPassword) + "&fmt=1&charset=" + SmscCharset + "&" + arg;
@@ -153,9 +233,6 @@ namespace OsEngine.Logging
 
             string ret;
             int i = 0;
-            HttpWebRequest request;
-            StreamReader sr;
-            HttpWebResponse response;
 
             do
             {
@@ -165,106 +242,18 @@ namespace OsEngine.Logging
                 if (i == 2)
                     url = url.Replace("://smsc.ru/", "://www2.smsc.ru/");
 
-                request = (HttpWebRequest)WebRequest.Create(url);
-
-                if (SmscPost) {
-                    request.Method = "POST";
-
-                    string postHeader, boundary = "----------" + DateTime.Now.Ticks.ToString("x");
-                    byte[] postHeaderBytes, boundaryBytes = Encoding.ASCII.GetBytes("--" + boundary + "--\r\n"), tbuf;
-                    StringBuilder sb = new StringBuilder();
-                    int bytesRead;
-
-                    byte[] output = new byte[0];
-
-                    if (files == null) {
-                        request.ContentType = "application/x-www-form-urlencoded";
-                        output = Encoding.UTF8.GetBytes(arg);
-                        request.ContentLength = output.Length;
-                    }
-                    else {
-                        request.ContentType = "multipart/form-data; boundary=" + boundary;
-
-                        string[] par = arg.Split('&');
-                        int fl = files.Length;
-
-                        for (int pcnt = 0; pcnt < par.Length + fl; pcnt++)
-                        {
-                            sb.Clear();
-
-                            sb.Append("--");
-                            sb.Append(boundary);
-                            sb.Append("\r\n");
-                            sb.Append("Content-Disposition: form-data; name=\"");
-
-                            bool pof = pcnt < fl;
-                            String[] nv = new String[0];
-
-                            if (pof)
-                            {
-                                sb.Append("File" + (pcnt + 1));
-                                sb.Append("\"; filename=\"");
-                                sb.Append(Path.GetFileName(files[pcnt]));
-                            }
-                            else {
-                                nv = par[pcnt - fl].Split('=');
-                                sb.Append(nv[0]);
-                            }
-
-                            sb.Append("\"");
-                            sb.Append("\r\n");
-                            sb.Append("Content-Type: ");
-                            sb.Append(pof ? "application/octet-stream" : "text/plain; charset=\"" + SmscCharset + "\"");
-                            sb.Append("\r\n");
-                            sb.Append("Content-Transfer-Encoding: binary");
-                            sb.Append("\r\n");
-                            sb.Append("\r\n");
-
-                            postHeader = sb.ToString();
-                            postHeaderBytes = Encoding.UTF8.GetBytes(postHeader);
-
-                            output = _concatb(output, postHeaderBytes);
-
-                            if (pof)
-                            {
-                                FileStream fileStream = new FileStream(files[pcnt], FileMode.Open, FileAccess.Read);
-
-                                // Write out the file contents
-                                byte[] buffer = new Byte[checked((uint)Math.Min(4096, (int)fileStream.Length))];
-
-                                bytesRead = 0;
-                                while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) != 0)
-                                {
-                                    tbuf = buffer;
-                                    Array.Resize(ref tbuf, bytesRead);
-
-                                    output = _concatb(output, tbuf);
-                                }
-                            }
-                            else {
-                                byte[] vl = Encoding.UTF8.GetBytes(nv[1]);
-                                output = _concatb(output, vl);
-                            }
-
-                            output = _concatb(output, Encoding.UTF8.GetBytes("\r\n"));
-                        }
-                        output = _concatb(output, boundaryBytes);
-
-                        request.ContentLength = output.Length;
-                    }
-
-                    Stream requestStream = request.GetRequestStream();
-                    requestStream.Write(output, 0, output.Length);
-                }
-
-                try
+                // Prepare POST data if needed
+                byte[] postData = null;
+                if (SmscPost)
                 {
-                    response = (HttpWebResponse)request.GetResponse();
-
-                    sr = new StreamReader(response.GetResponseStream());
-                    ret = sr.ReadToEnd();
+                    postData = Encoding.UTF8.GetBytes(arg);
                 }
-                catch (WebException) {
+
+                // Use HttpClient instead of WebRequest
+                ret = SendHttpRequest(url, SmscPost, postData, files);
+                
+                if (ret == null)
+                {
                     ret = "";
                 }
             }

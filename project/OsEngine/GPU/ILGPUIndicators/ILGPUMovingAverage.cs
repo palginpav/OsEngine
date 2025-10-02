@@ -160,38 +160,41 @@ namespace OsEngine.GPU.ILGPUIndicators
         /// <exception cref="GPUCalculationException">Thrown when GPU calculation fails</exception>
         private async Task<float[]> CalculateMovingAverageGPUAsync(float[] closePrices)
         {
-            try
+            // Use Task.Run to properly handle CPU-bound GPU work asynchronously
+            return await Task.Run(() =>
             {
-                // Use ILGPU for real GPU calculation following official documentation
-                using (var gpuData = _accelerator.Allocate1D<float>(closePrices.Length))
-                using (var gpuResult = _accelerator.Allocate1D<float>(closePrices.Length))
+                try
                 {
-                    // Copy data to GPU
-                    gpuData.CopyFromCPU(closePrices);
-                    
-                    // Execute real GPU kernel for moving average calculation following ILGPU documentation
-                    _accelerator.LaunchAutoGrouped(
-                        MovingAverageKernel,
-                        new Index1D(closePrices.Length),
-                        gpuData.View,
-                        gpuResult.View,
-                        _period);
-                    
-                    // Synchronize GPU execution
-                    _accelerator.Synchronize();
-                    
-                    // Copy result back to CPU
-                    var result = new float[closePrices.Length];
-                    gpuResult.CopyToCPU(result);
-                    
-                    
-                    return result;
+                    // Use ILGPU for real GPU calculation following official documentation
+                    using (var gpuData = _accelerator.Allocate1D<float>(closePrices.Length))
+                    using (var gpuResult = _accelerator.Allocate1D<float>(closePrices.Length))
+                    {
+                        // Copy data to GPU
+                        gpuData.CopyFromCPU(closePrices);
+                        
+                        // Execute real GPU kernel for moving average calculation following ILGPU documentation
+                        _accelerator.LaunchAutoGrouped(
+                            MovingAverageKernel,
+                            new Index1D(closePrices.Length),
+                            gpuData.View,
+                            gpuResult.View,
+                            _period);
+                        
+                        // Synchronize GPU execution
+                        _accelerator.Synchronize();
+                        
+                        // Copy result back to CPU
+                        var result = new float[closePrices.Length];
+                        gpuResult.CopyToCPU(result);
+                        
+                        return result;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                throw new GPUCalculationException($"Real ILGPU kernel execution failed: {ex.Message}", ex);
-            }
+                catch (Exception ex)
+                {
+                    throw new GPUCalculationException($"Real ILGPU kernel execution failed: {ex.Message}", ex);
+                }
+            });
         }
 
         /// <summary>
