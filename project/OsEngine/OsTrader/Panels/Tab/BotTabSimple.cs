@@ -219,6 +219,59 @@ namespace OsEngine.OsTrader.Panels.Tab
         }
 
         /// <summary>
+        /// StartPaint overload for TradeHarvester custom dashboard.
+        /// 
+        /// Перегрузка StartPaint для пользовательской панели TradeHarvester.
+        /// </summary>
+        public void StartPaint(Grid gridChart, WindowsFormsHost hostChart, WindowsFormsHost hostGlass, WindowsFormsHost hostOpenDeals,
+                     WindowsFormsHost hostCloseDeals, Rectangle rectangleChart, WindowsFormsHost hostAlerts, TextBox textBoxLimitPrice, 
+                     Grid gridChartControlPanel, TextBox textBoxVolume, WindowsFormsHost hostGrids, System.Windows.Forms.UserControl customDashboard)
+        {
+            try
+            {
+                SetNewLogMessage("*** TRADEHARVESTER CUSTOM STARTPAINT CALLED ***", LogMessageType.System);
+                
+                // Initialize other components normally
+                if (Security != null && Portfolio != null)
+                {
+                    _chartMaster?.SetNewSecurity(Security.Name, _connector.TimeFrameBuilder, Portfolio.Number, Connector.ServerFullName);
+                }
+
+                // Initialize all components except the chart
+                _marketDepthPainter?.StartPaint(hostGlass, textBoxLimitPrice, textBoxVolume);
+                _journal?.StartPaint(hostOpenDeals, hostCloseDeals);
+                _alerts?.StartPaint(hostAlerts);
+                GridsMaster?.StartPaint(hostGrids);
+                _chartMaster?.StartPaintChartControlPanel(gridChartControlPanel);
+
+                // Replace the chart area with our custom dashboard
+                if (customDashboard != null)
+                {
+                    SetNewLogMessage("Replacing chart area with TradeHarvester dashboard", LogMessageType.System);
+                    
+                    // Set dashboard properties
+                    customDashboard.Size = new System.Drawing.Size(800, 600);
+                    customDashboard.Visible = true;
+                    customDashboard.BringToFront();
+                    
+                    // Replace the chart with our custom dashboard
+                    hostChart.Child = customDashboard;
+                    
+                    SetNewLogMessage($"Dashboard assigned to hostChart. Child type: {hostChart.Child?.GetType().Name}", LogMessageType.System);
+                }
+                else
+                {
+                    SetNewLogMessage("Custom dashboard is null - using normal chart", LogMessageType.System);
+                    _chartMaster?.StartPaint(gridChart, hostChart, rectangleChart);
+                }
+            }
+            catch (Exception error)
+            {
+                SetNewLogMessage($"Error in TradeHarvester StartPaint: {error.ToString()}", LogMessageType.Error);
+            }
+        }
+
+        /// <summary>
         /// Stop drawing this robot
         /// </summary>
         public void StopPaint()

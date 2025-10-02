@@ -30,6 +30,7 @@ Plaza/Log/
 Data/
 lua/logs/
 Custom/Indicators/bin/
+Custom/Robots/TradeHarvester/
 **/Atp_Router/Files/
 **/[Dd]ebug/**.xml
 **/[Dd]ebug/**.con

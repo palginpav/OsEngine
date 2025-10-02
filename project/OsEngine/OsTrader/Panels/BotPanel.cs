@@ -2125,9 +2125,24 @@ position => position.State != PositionStateType.OpeningFail
 
                 if (ActiveTab.TabType == BotTabType.Simple)
                 {
-                    ((BotTabSimple)ActiveTab).StartPaint(_gridChart, _hostChart, _hostGlass, _hostOpenDeals,
-                        _hostCloseDeals, _rectangle, _hostAlerts, _textBoxLimitPrice,
-                        _gridChartControlPanel, _textBoxVolume, _hostGrids);
+                    // Check if this bot has a custom dashboard using reflection
+                    var dashboardField = this.GetType().GetField("_dashboard", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    var customDashboard = dashboardField?.GetValue(this) as System.Windows.Forms.UserControl;
+                    
+                    if (customDashboard != null)
+                    {
+                        // Use the custom StartPaint method with dashboard
+                        ((BotTabSimple)ActiveTab).StartPaint(_gridChart, _hostChart, _hostGlass, _hostOpenDeals,
+                            _hostCloseDeals, _rectangle, _hostAlerts, _textBoxLimitPrice,
+                            _gridChartControlPanel, _textBoxVolume, _hostGrids, customDashboard);
+                    }
+                    else
+                    {
+                        // Use the normal StartPaint method
+                        ((BotTabSimple)ActiveTab).StartPaint(_gridChart, _hostChart, _hostGlass, _hostOpenDeals,
+                            _hostCloseDeals, _rectangle, _hostAlerts, _textBoxLimitPrice,
+                            _gridChartControlPanel, _textBoxVolume, _hostGrids);
+                    }
 
                     for (int i = 0; i < _tabControlControl.Items.Count; i++)
                     {
