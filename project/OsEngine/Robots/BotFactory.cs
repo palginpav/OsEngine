@@ -214,6 +214,7 @@ namespace OsEngine.Robots
         private static readonly object _referencesLock = new object();
         private static readonly Dictionary<string, Type> _compiledBotTypesCache = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _compiledTypesCacheLock = new object();
+        private static bool _assemblyResolverInitialized = false;
 
         // Comparer for MetadataReference based on Display path to avoid duplicates
         private class MetadataReferenceComparer : IEqualityComparer<MetadataReference>
@@ -240,6 +241,12 @@ namespace OsEngine.Robots
                 {
                     if (_baseReferences == null) // Double-check locking
                     {
+                        // Set up assembly resolver for custom robot DLLs (only once)
+                        if (!_assemblyResolverInitialized)
+                        {
+                            AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+                            _assemblyResolverInitialized = true;
+                        }
                         var references = new HashSet<MetadataReference>(new MetadataReferenceComparer());
                         var entryAssembly = Assembly.GetEntryAssembly();
                         if (entryAssembly != null)
@@ -279,6 +286,120 @@ namespace OsEngine.Robots
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Assembly resolver for custom robot DLLs.
+        /// Helps the .NET runtime find assemblies in Custom\Robots\*\Dlls folders.
+        /// 
+        /// Резолвер сборок для пользовательских DLL роботов.
+        /// Помогает .NET runtime найти сборки в папках Custom\Robots\*\Dlls.
+        /// </summary>
+        /// <param name="sender">Event sender</param>
+        /// <param name="args">Assembly resolve arguments</param>
+        /// <returns>Resolved assembly or null if not found</returns>
+        private static Assembly OnAssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            try
+            {
+                // Prevent infinite recursion by checking if we're already in the middle of resolving
+                if (_isResolving)
+                {
+                    return null;
+                }
+
+                _isResolving = true;
+
+                try
+                {
+                    // Extract assembly name without version info
+                    string assemblyName = new AssemblyName(args.Name).Name;
+
+                    // Skip system assemblies that might cause issues
+                    if (IsSystemAssembly(assemblyName))
+                    {
+                        return null;
+                    }
+
+                    // First, check if the assembly is already loaded
+                    var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+                    foreach (var assembly in loadedAssemblies)
+                    {
+                        if (assembly.GetName().Name.Equals(assemblyName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return assembly;
+                        }
+                    }
+
+                    // Look for assemblies in all Custom\Robots\*\Dlls folders
+                    string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+                    string customRobotsPath = Path.Combine(baseDirectory, "Custom", "Robots");
+
+                    if (Directory.Exists(customRobotsPath))
+                    {
+                        string[] robotDirectories = Directory.GetDirectories(customRobotsPath);
+
+                        foreach (string robotDirectory in robotDirectories)
+                        {
+                            string dllsPath = Path.Combine(robotDirectory, "Dlls");
+                            if (Directory.Exists(dllsPath))
+                            {
+                                string assemblyPath = Path.Combine(dllsPath, assemblyName + ".dll");
+
+                                if (File.Exists(assemblyPath))
+                                {
+                                    // Try to load the assembly, but handle version conflicts gracefully
+                                    try
+                                    {
+                                        return Assembly.LoadFrom(assemblyPath);
+                                    }
+                                    catch (Exception loadEx) when (loadEx is FileLoadException || loadEx is BadImageFormatException)
+                                    {
+                                        // If there's a version conflict, try to return the already loaded version
+                                        foreach (var assembly in loadedAssemblies)
+                                        {
+                                            if (assembly.GetName().Name.Equals(assemblyName, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                Console.WriteLine($"Using already loaded assembly {assemblyName} due to version conflict");
+                                                return assembly;
+                                            }
+                                        }
+
+                                        // If we can't find a loaded version, re-throw the original exception
+                                        throw;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    _isResolving = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log the error but don't throw - let other resolvers try
+                Console.WriteLine($"AssemblyResolve error for {args.Name}: {ex.Message}");
+            }
+
+            return null; // Let other resolvers try
+        }
+
+        private static bool _isResolving = false;
+
+        private static bool IsSystemAssembly(string assemblyName)
+        {
+            // Skip system assemblies that might cause circular dependencies
+            string[] systemAssemblies = {
+                "mscorlib", "System", "System.Core", "System.Data", "System.Xml",
+                "System.Windows.Forms", "System.Drawing", "PresentationCore",
+                "PresentationFramework", "WindowsBase", "System.Xaml",
+                "Microsoft.CSharp", "System.Configuration", "System.Security"
+            };
+
+            return systemAssemblies.Any(sys => assemblyName.StartsWith(sys, StringComparison.OrdinalIgnoreCase));
         }
 
         private static BotPanel CompileAndInstantiateBotScript(string nameClass, string nameInstance, StartProgram startProgram)
@@ -324,6 +445,7 @@ namespace OsEngine.Robots
 
             if (dllsFromScriptFolder != null)
             {
+                
                 foreach (string dllPath in dllsFromScriptFolder)
                 {
                     if (!currentCompilationReferences.Any(r => r.Display.Equals(dllPath, StringComparison.OrdinalIgnoreCase)))
@@ -332,13 +454,22 @@ namespace OsEngine.Robots
                         {
                             currentCompilationReferences.Add(MetadataReference.CreateFromFile(dllPath));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
-                            Console.WriteLine($"Warning: Could not create metadata reference for custom DLL {dllPath}. {ex.Message}");
+                            // Log error but continue
                         }
+                    }
+                    else
+                    {
+                        // Skip duplicate reference
                     }
                 }
             }
+            else
+            {
+                // No DLLs found in script folder
+            }
+
 
             SourceText sourceText;
             using (var fileStream = new FileStream(scriptPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 4096, useAsync: false))
@@ -380,10 +511,12 @@ namespace OsEngine.Robots
                     optimizationLevel: OptimizationLevel.Debug,
                     platform: Platform.AnyCpu));
 
+
             using (var assemblyStream = new MemoryStream())
             using (var pdbStream = new MemoryStream())
             {
                 EmitResult result = compilation.Emit(assemblyStream, pdbStream, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
+
 
                 if (!result.Success)
                 {
