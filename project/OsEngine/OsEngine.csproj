@@ -66,6 +66,10 @@
     <Page Remove="lua\**" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="Robots\DataTransferObjects.cs" />
+    <Compile Remove="Robots\OptionsDataCollector.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="ILGPU" Version="1.5.3" />
     <PackageReference Include="ILGPU.Algorithms" Version="1.5.3" />
     <Reference Include="BytesRoad.Net.Ftp">
