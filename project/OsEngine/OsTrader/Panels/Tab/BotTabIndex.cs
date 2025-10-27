@@ -18,6 +18,7 @@ using System.Threading;
 using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using System.Windows.Shapes;
+using OsEngine.Charts.CandleChart.Elements;
 
 namespace OsEngine.OsTrader.Panels.Tab
 {
@@ -456,6 +457,14 @@ namespace OsEngine.OsTrader.Panels.Tab
         public string GetChartLabel()
         {
             return _chartMaster.GetChartLabel();
+        }
+
+        /// <summary>
+        /// Add custom element to the chart
+        /// </summary>
+        public void SetChartElement(IChartElement element)
+        {
+            _chartMaster.SetChartElement(element);
         }
 
         #endregion
