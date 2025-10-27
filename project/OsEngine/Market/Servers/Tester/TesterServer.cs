@@ -3313,7 +3313,8 @@ namespace OsEngine.Market.Servers.Tester
                 security.Security.Name = name;
                 security.Security.Lot = 1;
                 security.Security.NameClass = "TestClass";
-                security.Security.Go = 1;
+                security.Security.MarginBuy = 1;
+                security.Security.MarginSell = 1;
                 security.Security.PriceStepCost = 1;
                 security.Security.PriceStep = 1;
 
