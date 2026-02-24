@@ -88,6 +88,8 @@ namespace OsEngine.Market.Servers.YahooFinance
 
         public event Action DisconnectEvent;
 
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -129,6 +131,20 @@ namespace OsEngine.Market.Servers.YahooFinance
                             {
                                 Security security = new Security();
                                 security.Name = split[1];
+
+                                if (security.Name.Contains('$') || security.Name.Contains('.'))
+                                {
+                                    continue;
+                                }
+
+                                if (security.Name == "CON" ||
+                                    security.Name == "PRN" ||
+                                    security.Name == "AUX" ||
+                                    security.Name == "NUL")
+                                {
+                                    security.Name += "_";
+                                }
+
                                 security.NameFull = split[2];
 
                                 if (security.NameFull.Contains("ETF"))
@@ -351,14 +367,22 @@ namespace OsEngine.Market.Servers.YahooFinance
             }           
         }
 
-        private readonly RateGate _rgCandleData = new RateGate(1, TimeSpan.FromMilliseconds(200));
+        private readonly RateGate _rgCandleData = new RateGate(1, TimeSpan.FromMilliseconds(10));
 
         private List<Candle> RequestCandleHistory(string security, string resolution, long fromTimeStamp, long toTimeStamp)
         {
-            _rgCandleData.WaitToProceed(100);
+            _rgCandleData.WaitToProceed();
 
             try
             {
+                if (security == "CON_" ||
+                    security == "PRN_" ||
+                    security == "AUX_" ||
+                    security == "NUL_")
+                {
+                    security = security.Split('_')[0];
+                }
+
                 string queryParam = $"{security}?";
                 queryParam += $"symbol={security}&";
                 queryParam += $"interval={resolution}&";
@@ -375,7 +399,7 @@ namespace OsEngine.Market.Servers.YahooFinance
                 }
                 else
                 {
-                    SendLogMessage($"RequestCandleHistory: {responseMessage.StatusCode} - {responseMessage.Content}", LogMessageType.Error);
+                    SendLogMessage($"RequestCandleHistory: {security} {responseMessage.StatusCode} - {responseMessage.Content}", LogMessageType.Error);
                 }
             }
             catch (Exception exception)
@@ -496,6 +520,8 @@ namespace OsEngine.Market.Servers.YahooFinance
             return null;
         }
 
+        public void SetLeverage(Security security, decimal leverage) { }
+
         public event Action<News> NewsEvent { add { } remove { } }
 
         public event Action<Order> MyOrderEvent { add { } remove { } }
@@ -513,6 +539,8 @@ namespace OsEngine.Market.Servers.YahooFinance
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
 
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
 
         #endregion
     }

@@ -4,6 +4,8 @@
 */
 
 
+using System.Security.Policy;
+
 namespace OsEngine.Language
 {
     public class MarketLocal
@@ -518,8 +520,8 @@ namespace OsEngine.Language
             "Ru:Смена цены ордера. Номер _");
 
         public string Label121 => OsLocalization.ConvertToLocString(
-            "Eng:You can set a client code if your broker (BСS / VTB / etc) requires it. Or when trading on a sub-account _" +
-            "Ru:Вы можете установить код клиента, если этого требует Ваш брокер (БКС / ВТБ / etc). Или когда торгуете на саб-счёте _");
+            "Eng:If you enter the client's code here, only this account will be uploaded. The portfolio and transactions will be displayed only for this account. If you trade on the same account, it is advisable to register it here so as not to display unnecessary accounts._" +
+            "Ru:Если прописать здесь код клиента, то будет подгружен только данный счет. Отображение портфеля и сделки будут осуществляться только по данному счету. Если торгуете на одном счете, желательно его прописать здесь, чтобы не отображать лишние счета_");
 
         public string Label122 => OsLocalization.ConvertToLocString(
             "Eng:Value type_" +
@@ -681,14 +683,7 @@ namespace OsEngine.Language
             "Eng:Count news to save_" +
             "Ru:Хранить новости. Кол-во_");
 
-        public string Label162 => OsLocalization.ConvertToLocString(
-          "Eng:One client code_" +
-          "Ru:Один код клиента_");
-
-        public string Label163 => OsLocalization.ConvertToLocString(
-          "Eng:If the broker uses several client codes, the value is false (for example, Finam , BCS), if there is only one client code, the value is true (for example, VTB). Used to display the portfolio. By default, false_" +
-          "Ru:Если брокер использует несколько клиентских кодов, то значение false, если клиент код всего один, то значение true (например, ВТБ). Используется для отображения портфеля. По умолчанию false_");
-
+        
         public string Label164 => OsLocalization.ConvertToLocString(
           "Eng:Name _" +
           "Ru:Имя _");
@@ -999,7 +994,7 @@ namespace OsEngine.Language
 
         public string Label241 => OsLocalization.ConvertToLocString(
          "Eng:Non trade periods_" +
-         "Ru:Не торговые периоды_");
+         "Ru:Неторговые периоды_");
 
         public string Label242 => OsLocalization.ConvertToLocString(
          "Eng:Check data feed on disconnect_" +
@@ -1034,16 +1029,16 @@ namespace OsEngine.Language
          "Ru:Выбор режима маржи. Кросс-маржа или изолированная_");
 
         public string Label250 => OsLocalization.ConvertToLocString(
-         "Eng:Selecting a hedging mode. If on - the hedging mode is enabled; if off - the one-way mode is enabled_" +
-         "Ru:Выбор режима хеджирования. Если on - то включен режим хеджирования, если off - включен односторонний режим_");
+         "Eng:Selecting a hedging mode. If True - the hedging mode is enabled; if False - the one-way mode is enabled_" +
+         "Ru:Выбор режима хеджирования. Если True - то включен режим хеджирования, если False - включен односторонний режим_");
 
         public string Label251 => OsLocalization.ConvertToLocString(
          "Eng:Set leverage from 1 to the maximum allowed by the exchange. Works only for linear futures. If left blank, the leverage you set on the exchange is used_" +
          "Ru:Устанавливаем кредитное плечо от 1 до максимально разрешенного биржей. Работает только для линейных фьючерсов. Если поле оставить пустым, то используется плечо, которое вы установили на бирже_");
 
         public string Label252 => OsLocalization.ConvertToLocString(
-        "Eng:If True, we request information on open interest, funding, and volume24. It should also be true if you're using options. If you're not using this data, it's recommended to set it to False_" +
-        "Ru:Если True - то запрашиваем информацию по открытому интересу, фандингу, объему24. А так же должно быть true, если вы задействуете опционы. Если вы не используйте эти данные, то рекомендуется установить False_");
+        "Eng:If True, we request information on open interest, funding, and volume24. It should also be True if you're using options. If you're not using this data, it's recommended to set it to False_" +
+        "Ru:Если True - то запрашиваем информацию по открытому интересу, фандингу, объему24. А так же должно быть True, если вы задействуете опционы. Если вы не используйте эти данные, то рекомендуется установить False_");
 
         public string Label253 => OsLocalization.ConvertToLocString(
          "Eng:If True, we request options. If you don't use them, we recommend setting it to False_" +
@@ -1084,15 +1079,244 @@ namespace OsEngine.Language
         public string Label262 => OsLocalization.ConvertToLocString(
          "Eng:Includes a currency trading platform_" +
          "Ru:Включает площадку для торговли валютой_");
+
         public string Label263 => OsLocalization.ConvertToLocString(
          "Eng:Includes a platform for trading commodities_" +
          "Ru:Включает площадку для торговли сырьевыми товарами_");
+
         public string Label264 => OsLocalization.ConvertToLocString(
          "Eng:Includes a platform for trading funds_" +
          "Ru:Включает площадку для торговли фондами_");
+
         public string Label265 => OsLocalization.ConvertToLocString(
          "Eng:It includes a platform for trading other instruments, such as stocks._" +
          "Ru:Включает площадку для торговли другими инструментами, например акциями_");
+
+        public string Label266 => OsLocalization.ConvertToLocString(
+         "Eng:IP address of the Expert advisor. It is recommended to run the MT5 terminal and OsEngine on the same local machine_" +
+         "Ru:IP адрес советника. Рекомендуется запускать терминал МТ5 и OsEngine на одной локальной машине_");
+
+        public string Label267 => OsLocalization.ConvertToLocString(
+         "Eng:Expert advisor port. It is recommended to run the MT5 terminal and OsEngine on the same local machine_" +
+         "Ru:Порт советника. Рекомендуется запускать терминал МТ5 и OsEngine на одной локальной машине_");
+
+        public string Label268 => OsLocalization.ConvertToLocString(
+        "Eng:A demo server where you can trade on a virtual account. If True, demo mode is enabled; if False, it's disabled. Separate public and private keys are required for demo mode_" +
+        "Ru:Демонстрационный сервер, где можно поторговать на виртуальном счете. Если True - то демо режим включен, если False - выключен. Для демо нужно выписывать отдельные публичный и приватный ключи_");
+
+        public string Label269 => OsLocalization.ConvertToLocString(
+        "Eng:If True, we request information on volume24. If you do not use this data, it is recommended to set it to False_" +
+        "Ru:Если True - то запрашиваем информацию по объему24. Если вы не используйте эти данные, то рекомендуется установить False_");
+
+        public string Label270 => OsLocalization.ConvertToLocString(
+        "Eng:If True, we request information on open interest, funding, and volume24. If you're not using this data, it's recommended to set it to False_" +
+        "Ru:Если True - то запрашиваем информацию по открытому интересу, фандингу, объему24. Если вы не используйте эти данные, то рекомендуется установить False_");
+
+        public string Label271 => OsLocalization.ConvertToLocString(
+         "Eng:Passphrase. This is written down on the exchange's website in the API section when you generate keys_" +
+         "Ru:Кодовая фраза. Выписывается на сайте биржи в разделе API, когда создаете ключи_");
+
+        public string Label272 => OsLocalization.ConvertToLocString(
+         "Eng:Id. This can be found on the exchange's website in the API section_" +
+         "Ru:Id. Выписывается на сайте биржи в разделе API_");
+
+        public string Label273 => OsLocalization.ConvertToLocString(
+         "Eng:Choosing a trading mode. Spot or margin_" +
+         "Ru:Выбор режима торговли. Спот или маржин_");
+
+        public string Label274 => OsLocalization.ConvertToLocString(
+         "Eng:Selecting a margin currency_" +
+         "Ru:Выбор маржинальной валюты_");
+
+        public string Label275 => OsLocalization.ConvertToLocString(
+         "Eng:Selecting a server for trading. Live or test trading. A separate account and API keys are created for each server_" +
+         "Ru:Выбор сервера для торговли. Реальная торговля или тестовая. Для каждого сервера создается отдельный аккаунт и api ключи_");
+
+        public string Label276 => OsLocalization.ConvertToLocString(
+         "Eng:If True, we use the Post Only order type. This is only for limit orders. Post Only is an order type that guarantees that your order will be placed in the order book as a maker and will not be executed as a taker_" +
+         "Ru:Если True - то используем тип ордера Post Only. Доступно только для лимитных ордеров. Post Only — это тип ордера, который гарантирует, что ваш ордер будет размещен в книги заявок как maker и не исполнится как taker_");
+
+        public string Label277 => OsLocalization.ConvertToLocString(
+         "Eng:User ID. Assigned to each registered user on the exchange._" +
+         "Ru:UID пользователя. Присваивается каждому зарегистрированному пользователю на бирже_");
+
+        public string Label278 => OsLocalization.ConvertToLocString(
+         "Eng:Max spread to build candles_" +
+         "Ru:Max спред для свечек_");
+
+        public string Label279=> OsLocalization.ConvertToLocString(
+         "Eng:Max spread limit is on_" +
+         "Ru:Включить ограничение_");
+
+        public string Label280 => OsLocalization.ConvertToLocString(
+         "Eng:Max spread value %_" +
+         "Ru:Max ширина спреда %_");
+
+        public string Label281 => OsLocalization.ConvertToLocString(
+         "Eng:The button opens the non-trading periods settings window for the connector. By selecting a non-trading period, the connector will ignore incoming data about trades and market depth. PC time is used as the control time!_" +
+         "Ru:Кнопка открывает окно настроек неторговых периодов для коннектора. Выбрав неторговый период, коннектор будет игнорировать поступающие данные о трейдах и стакана. В качестве контролького времени используется время ПК!_");
+       
+        public string Label282 => OsLocalization.ConvertToLocString(
+         "Eng:Shifts the time of candles, trades, market depth, and orders to a specific time._" +
+         "Ru:Сдвигает время свечей, сделок, стакана и ордеров на определенное кол-во часов._");
+
+        public string Label283 => OsLocalization.ConvertToLocString(
+         "Eng:Connection terminated. No API Key. You must specify the api token. You can get it on the T-Invest website._" +
+         "Ru:Соединение прервано. Токена API нет. Необходимо указать токен api. Вы можете получить его на веб-сайте Т-Инвестиции_");
+
+        public string Label284 => OsLocalization.ConvertToLocString(
+         "Eng:Start T-Invest connection_" +
+         "Ru:Запускаем подключение к Т-Инвестиции_");
+
+        public string Label285 => OsLocalization.ConvertToLocString(
+         "Eng:Start T-Invest connection_" +
+         "Ru:Запускаем подключение к Т-Инвестиции_");
+
+        public string Label286 => OsLocalization.ConvertToLocString(
+         "Eng:The standard reconnect procedure has been started. Connection will be restored in one minute. Reason is Delay in response from the API server. Stream _" +
+         "Ru:Запущена процедура штатного переподключения. Через минуту связь восстановится. Причина в задержка с ответом от сервера API. Поток _");
+
+        public string Label287 => OsLocalization.ConvertToLocString(
+         "Eng:Securities loaded. Count: _" +
+         "Ru:Бумаги для торгов подгружены. Количество: _");
+
+        public string Label288 => OsLocalization.ConvertToLocString(
+        "Eng:An error occurred in the security request method. Reconnect the connector. This is most likely a connection issue with the internet, and everything will be fine. If this happens again, please provide the following error message to the terminal support team _" +
+        "Ru:Ошибка в методе запроса бумаг. Переподключаем коннектор. Скорее всего это разрыв связи интернет и всё будет хорошо через минуту. Если это повторится, текст ошибки для поддержки терминала _");
+
+        public string Label289 => OsLocalization.ConvertToLocString(
+         "Eng:Error in the initial API connection method. Reconnect the connector. This is most likely a network connection issue, and everything will be fine in a minute. If this happens again, please provide the following error message to the terminal support team _" +
+         "Ru:Ошибка в методе первичного подключения к АПИ. Переподключаем коннектор. Скорее всего это разрыв связи интернет и всё будет хорошо через минуту. Если это повторится, текст ошибки для поддержки терминала _");
+
+        public string Label290 => OsLocalization.ConvertToLocString(
+         "Eng:Error in the get portfolio method. Reconnect the connector. This is most likely a network connection issue, and everything will be fine in a minute. If this happens again, please provide the following error message to the terminal support team _" +
+         "Ru:Ошибка в методе запроса портфеля. Переподключаем коннектор. Скорее всего это разрыв связи интернет и всё будет хорошо через минуту. Если это повторится, текст ошибки для поддержки терминала _");
+
+        public string Label291 => OsLocalization.ConvertToLocString(
+         "Eng:An error occurred while placing an order. Most likely, the error text contains the reason for the error. Error _" +
+         "Ru:Ошибка при выставлении ордера. _");
+
+        public string Label292 => OsLocalization.ConvertToLocString(
+         "Eng:Numerous attempts to withdraw the order. _" +
+         "Ru:Многочисленная попытка отозвать ордер.  _");
+
+        public string Label293 => OsLocalization.ConvertToLocString(
+         "Eng:An error occurred while cancel an order. Most likely, the error text contains the reason for the error. Error _" +
+         "Ru:Ошибка при отзыве ордера. _");
+
+        public string Label294 => OsLocalization.ConvertToLocString(
+         "Eng:The GRPC API stream has an error. Restart the connection. This will take less than a minute and everything is probably fine. If the error happens again, you should contact support. Stream name _" +
+         "Ru:Стрим GRPC API выдал ошибку. Перезапускаем подключение. Это займёт меньше минуты и скорее всего всё в порядке. Если ошибка повторяется непрерывно, надо обратиться в поддержку. Имя стрима _");
+
+        public string Label295 => OsLocalization.ConvertToLocString(
+         "Eng:A soft re-subscription to the GRPC stream has been detected. No connector restart is required. Stream _" +
+         "Ru:Зафиксирована мягкая переподписка на стрим GRPC. Перезапуск коннектора не требуется. Стрим _");
+
+        public string Label296 => OsLocalization.ConvertToLocString(
+         "Eng:Reconnecting the terminal to the T-Investments API. Several reconnections per day are normal. If you see this constantly, it is recommended to contact support. You can view the details of the program's operation in the connector log._" +
+         "Ru:Переподключаем терминал к АПИ Т-Инвестиции, это занимает минуту. Несколько переподключений в день норма. Если Вы видите это постоянно, рекомендуется написать в поддержку. Подробности работы программы первично можно посмотреть в логе коннектора. _");
+
+        public string Label297 => OsLocalization.ConvertToLocString(
+         "Eng:Security Subscribe error. Sending to next attempt. Attempt number_" +
+         "Ru:Ошибка в подписке бумаги. Отправляем на следующую попытку. Попытка номер _");
+
+        public string Label298 => OsLocalization.ConvertToLocString(
+         "Eng:Security Subscribe error. After three attempts, we still haven't subscribed. We're going to reconnect the connector. Security _" +
+         "Ru:Ошибка в подписке бумаги. После трёх попыток всё ещё не подписались. Уходим на переподключение коннектора. Бумага _");
+
+        public string Label299 => OsLocalization.ConvertToLocString(
+         "Eng:Unfortunately, Windows 7 does not support this connector. You need to update your operating system to version 10 or higher. _" +
+         "Ru:К сожалению Windows 7, данный коннектор не поддерживает. Вам надо обновить операционную систему до 10 версии или выше. _");
+
+        public string Label300 => OsLocalization.ConvertToLocString(
+         "Eng:Your connection token does not support trading operations. You need to issue a new token on the T-Investments website. Select the \"Trading\" option. Then connect using the new token. _" +
+         "Ru:Ваш токен подключения не поддерживает торговые операции. Необходимо выписать новый токен на сайте Т-Инвестиции. Указав галочку ТОРГОВЛЯ. И подключаться через него. _");
+
+        public string Label301 => OsLocalization.ConvertToLocString(
+         "Eng:There is not enough money in the portfolio for the operation _" +
+         "Ru:На счёте недостаточно средств для операции. _");
+
+        public string Label302 => OsLocalization.ConvertToLocString(
+         "Eng:The price is too high_" +
+         "Ru:Цена слишком высока _");
+
+        public string Label303 => OsLocalization.ConvertToLocString(
+         "Eng:Price_" +
+         "Ru:Цена_");
+
+        public string Label304 => OsLocalization.ConvertToLocString(
+         "Eng:The price is outside the limits_" +
+         "Ru:Цена за пределами лимита по инструменту_");
+
+        public string Label305 => OsLocalization.ConvertToLocString(
+         "Eng:Unable to download the list of securities. We are reconnecting the connector. This may be a temporary issue due to a lack of internet connection, and the connection will be restored in a few minutes. Or you have blocked requests to the Internet. Try to run the application from the Administrator or disable the antivirus_" +
+         "Ru:Не удаётся скачать список бумаг. Уходим на переподключение коннектора. Это может быть разовая проблема из-за отсутствия интернета, тогда через пару минут связь восстановится. Либо у Вас заблокированы запросы в Интернет. Пробуйте запустить приложение от Администратора или отключить антивирус_");
+
+        public string Label306 => OsLocalization.ConvertToLocString(
+         "Eng:If true is enabled, all downloaded papers will be saved to a file the first time the connector is started, and the next time the connector is restarted within 1 hour, the data will be downloaded from the file. If false, the data will be loaded from the MT5 terminal each time. Use true when the broker provides several thousand securities for trading._" +
+         "Ru:Если включен true, то при первом запуске коннектора все загруженные бумаги будут записаны в файл и при следующих запусках коннектора в течении 1 часа данные будут загружены из файла. Если false, то каждый раз данные будут грузиться с терминала МТ5. Используйте true когда брокер предоставляет несколько тысяч бумаг для торгов._");
+
+        public string Label307 => OsLocalization.ConvertToLocString(
+          "Eng:Trading mode_" +
+          "Ru:Режим торгов_");
+
+        public string Label308 => OsLocalization.ConvertToLocString(
+          "Eng:Trading mode on the Moscow Stock Exchange. Affects the display of the portfolio, accounts and positions_" +
+          "Ru:Режим торгов на Московской бирже. Влияет на отображение портфеля, счетов и позиций_");
+
+        public string Label309 => OsLocalization.ConvertToLocString(
+          "Eng:Full logging of user's orders and trades. Records all the statuses of orders and trades that came from the exchange._" +
+          "Ru:Полное логирование ордеров и трейдов пользователя. Записывает все статусы ордеров и трейдов, которые пришли с биржи._");
+
+        public string Label310 => OsLocalization.ConvertToLocString(
+          "Eng:The port of the Quik server to connect to. This port is specified in the config.json in the lua folder_" +
+          "Ru:Порт сервера квик, к которому осуществляется подключение. Данный порт прописан в файле config.json в lua папке_");
+
+        public string Label311 => OsLocalization.ConvertToLocString(
+          "Eng:If true, then the portfolio loads only signed securities. If false, the portfolio is loaded for all available securities. Some brokers have instruments with the same name, which may cause the portfolio to load incorrectly. In such cases, the true setting is recommended._" +
+          "Ru:Если true, то позиции по бумагам будут подгружаться только из тех бумаг, на которые подписаны роботы. Если false, то портфель подгружается по всем доступным бумагам. Некоторые брокеры имеют инструменты с одинаковым названием, из за этого портфель может неправильно подгружаться, для таких случаев рекомендуется настройка true_");
+
+        public string Label312 => OsLocalization.ConvertToLocString(
+          "Eng:Account and client code separator in the portfolio. The portfolio consists of a trading account and a client code. A special symbol is used for separation. For the L01-00000F00 account, the separator is a - sign. In this parameter, you need to put a sign other than the one used in the trading account, for example +. The result should be a portfolio L01-00000F00+11111 (11111 is the client's code). If you specify more than one character in the parameter, only the first one will be used._" +
+          "Ru:Разделитель счета и клиентского кода в портфеле. Портфель состоит из торгового счета и клиентского кода. Для разделения используется специальный символ. Для счета L01-00000F00 разделитель знак -. В данном параметре нужно ставить знак отличный от того, что используется в торговом счете, например +. В итоге должен получиться портфель L01-00000F00+11111 (11111 это код клиента). Если прописать в параметре больше одного символа, то будет использоваться только первый._");
+
+        public string Label313 => OsLocalization.ConvertToLocString(
+          "Eng:Important! No trading periods!_" +
+          "Ru:ВАЖНО! Неторговые периоды!_");
+
+        public string Label314 => OsLocalization.ConvertToLocString(
+          "Eng:Are you sure you want to clear the log? Data will be lost!_" +
+          "Ru:Вы уверены что хотите очистить лог? Данные будут потеряны!_");
+
+        public string Label315 => OsLocalization.ConvertToLocString(
+          "Eng:Reconnects the connector with No order. If the Transit server sends an order with the inactive status (the status is not known due to problems with communication with the exchange), then such an order is marked with the None status and is considered lost. Transaq Connector does not have a method for requesting orders, so the only way to request this order is to reconnect the connector._" +
+          "Ru:Переподключает коннектор при None ордере. Если сервер Транзак присылает ордер со статусом inactive (Статус не известен из-за проблем со связью с биржей), то такой ордер помечается статусом None и считается потерянным. У Transaq Connector нет метода для запроса ордеров, поэтому единственный способ запросить данный ордер это переподключение коннектора_");
+       
+        public string Label316 => OsLocalization.ConvertToLocString(
+          "Eng:Expiration_" +
+          "Ru:Экспирация_");
+
+        public string Label317 => OsLocalization.ConvertToLocString(
+          "Eng:Strike_" +
+          "Ru:Страйк_");
+
+        public string Label318 => OsLocalization.ConvertToLocString(
+          "Eng:There are no portfolio numbers in the GetAccountesReques. request. There is an internet error, a sandbox token has been issued, or a new portfolio has been created and you need to wait a few hours._" +
+          "Ru:Нет номеров портфелей в запросе GetAccountesReques. Ошибка интернета, выписан токен песочницы или создан новый портфель и нужно подождать несколько часов._");
+
+        public string Label319 => OsLocalization.ConvertToLocString(
+          "Eng:You do not have permission to trade this instrument. You need to pass tests in your broker's personal account._" +
+          "Ru:У Вас нет разрешения торговать этот инструмент. Нужно проходить тесты в личном кабинете брокера._");
+
+        public string Label320 => OsLocalization.ConvertToLocString(
+          "Eng:Do you want to delete the security? All data will be lost!_" +
+          "Ru:Хотите удалить торговый инструмент? Все данные будут утеряны! _");
+
+
+
+
+
+
 
         public string LabelCommissionType => OsLocalization.ConvertToLocString(
             "Eng:Commission type_" +
@@ -1534,6 +1758,14 @@ namespace OsEngine.Language
             "Eng:The program automatically went into reconnect mode. _" +
             "Ru:Программа автоматически перешла в режим повторного подключения. _");
 
+        public string Message103 => OsLocalization.ConvertToLocString(
+            "Eng:One of the sources does not have data connected. Do you want to continue? _" +
+            "Ru:В одном из источников не подключены данные. Вы хотите продолжить? _");
+
+        public string Message104 => OsLocalization.ConvertToLocString(
+            "Eng:Connection during the non-trading period of the connector is interrupted_" +
+            "Ru:Подключение в неторговый период коннектора прервано_");
+
         public string TitleTester => OsLocalization.ConvertToLocString(
             "Eng:Exchange emulator_" +
             "Ru:Эмулятор биржи_");
@@ -1642,6 +1874,10 @@ namespace OsEngine.Language
           "Eng:Market depth levels_" +
           "Ru:Уровней в стакане_");
 
+        public string ServerParam14 => OsLocalization.ConvertToLocString(
+          "Eng:Non trading periods_" +
+          "Ru:Неторговые периоды_");
+
         public string UseStock => OsLocalization.ConvertToLocString(
             "Eng:Stock_" +
             "Ru:Акции_");
@@ -1678,6 +1914,22 @@ namespace OsEngine.Language
             "Eng:Other_" +
             "Ru:Другое_");
 
+        public string FullLogConnector => OsLocalization.ConvertToLocString(
+            "Eng:Full logging of user's orders and trades_" +
+            "Ru:Полное логирование ордеров и трейдов пользователя_");
+
+        public string ReconnectingAfterNoneOrder => OsLocalization.ConvertToLocString(
+            "Eng:Reconnecting after a None order_" +
+            "Ru:Переподключение после None ордера_");
+
+        public string PortfolioOnlyBots => OsLocalization.ConvertToLocString(
+            "Eng:Bot only portfolio_" +
+            "Ru:Портфель только из роботов_");
+
+        public string PortfolioSeparator => OsLocalization.ConvertToLocString(
+            "Eng:Portfolio separator_" +
+            "Ru:Разделитель портфеля_");
+
         public string UseSecInfoUpdates => OsLocalization.ConvertToLocString(
             "Eng:Use sec info updates_" +
             "Ru:Включить обновления инструментов_");
@@ -1705,6 +1957,15 @@ namespace OsEngine.Language
         public string TelegramAuthTitle => OsLocalization.ConvertToLocString(
            "Eng:Telegram authorization_" +
            "Ru:Telegram авторизация_");
+
+        public string LeverageButton => OsLocalization.ConvertToLocString(
+           "Eng:Set leverage_" +
+           "Ru:Настроить обеспечение_");
+
+        public string LeverageButtonCommit => OsLocalization.ConvertToLocString(
+           "Eng:The button opens the leverage settings window for instruments._" +
+           "Ru:Кнопка открывает окно настроек плеча по инструментам._");
+
 
     }
 }

@@ -424,7 +424,13 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
                 return;
             }
 
-            if (_ordersInSystem.NumberMarket == order.NumberMarket)
+            
+           /*ServerMaster.Log.ProcessMessage(
+                "new order state " + order.State
+                + "\nnum user " + order.NumberUser
+                + "\nnum market " + order.NumberMarket, Logging.LogMessageType.Error);*/
+            
+            if (_ordersInSystem.NumberUser == order.NumberUser)
             {
                 _ordersInSystem.State = order.State;
 

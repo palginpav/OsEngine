@@ -346,30 +346,66 @@ namespace OsEngine.OsTrader.Panels
             {
                 for (int i = 0; TabsSimple != null && i < TabsSimple.Count; i++)
                 {
-                    if (TabsSimple[i].IsConnected == false)
+                    if(StartProgram == StartProgram.IsOsTrader)
                     {
-                        return false;
+                        if (TabsSimple[i].IsConnected == false)
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        if (string.IsNullOrEmpty(TabsSimple[i].Connector.SecurityName) == false
+                          && TabsSimple[i].IsConnected == false)
+                        {
+                            return false;
+                        }
                     }
                 }
 
                 for (int i = 0; TabsScreener != null && i < TabsScreener.Count; i++)
                 {
-                    if (TabsScreener[i].IsConnected == false)
+                    if (StartProgram == StartProgram.IsOsTrader)
                     {
-                        return false;
+                        if (TabsScreener[i].IsConnected == false)
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        if (TabsScreener[i].SecuritiesNames != null
+                         && TabsScreener[i].SecuritiesNames.Count > 0
+                         && TabsScreener[i].IsConnected == false)
+                        {
+                            return false;
+                        }
                     }
                 }
 
                 for (int i = 0; TabsIndex != null && i < TabsIndex.Count; i++)
                 {
-                    if (TabsIndex[i].IsConnected == false)
+                    if (StartProgram == StartProgram.IsOsTrader)
                     {
-                        return false;
+                        if (TabsIndex[i].IsConnected == false)
+                        {
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        if (TabsIndex[i].Tabs != null
+                        && TabsIndex[i].Tabs.Count > 0
+                        && TabsIndex[i].IsConnected == false)
+                        {
+                            return false;
+                        }
                     }
                 }
 
-                if (TabsSimple == null &&
-                    TabsIndex == null)
+                if (TabsSimple == null 
+                    && TabsIndex == null
+                    && TabsScreener == null)
                 {
                     return false;
                 }
@@ -785,7 +821,7 @@ namespace OsEngine.OsTrader.Panels
 position => position.State != PositionStateType.OpeningFail
 && position.EntryPrice != 0 && position.ClosePrice != 0));
 
-                    result += PositionStatisticGenerator.GetAllProfitPercent(positions.ToArray());
+                    result += PositionStatisticGenerator.GetAllProfitPercent(positions.ToArray(), false);
                 }
                 return result;
             }
@@ -820,7 +856,7 @@ position => position.State != PositionStateType.OpeningFail
 position => position.State != PositionStateType.OpeningFail
 && position.EntryPrice != 0 && position.ClosePrice != 0));
 
-                    result += PositionStatisticGenerator.GetAllProfitInAbsolute(positions.ToArray());
+                    result += PositionStatisticGenerator.GetAllProfitInAbsolute(positions.ToArray(), false);
                 }
                 return result;
             }
@@ -1904,6 +1940,10 @@ position => position.State != PositionStateType.OpeningFail
                 if (tabType == BotTabType.Simple)
                 {
                     newTab = new BotTabSimple(nameTab, StartProgram);
+
+                    string nameClass = this.GetType().Name;
+
+                    ((BotTabSimple)newTab).BotClassName = nameClass;
                 }
                 else if (tabType == BotTabType.Index)
                 {
@@ -2470,6 +2510,11 @@ position => position.State != PositionStateType.OpeningFail
 
         public void SendNewLogMessage(string message, LogMessageType type)
         {
+            if(type  == LogMessageType.Error)
+            {
+                message = NameStrategyUniq + " " + this.GetNameStrategyType() + "\n" + message;
+            }
+
             if (LogMessageEvent != null)
             {
                 LogMessageEvent(message, type);
@@ -2702,13 +2747,20 @@ position => position.State != PositionStateType.OpeningFail
 
         public void AddChildren(object children)
         {
-            if (GridToPaint.Dispatcher.CheckAccess() == false)
+            try
             {
-                GridToPaint.Dispatcher.Invoke(new Action<object>(AddChildren), children);
-                return;
-            }
+                if (GridToPaint.Dispatcher.CheckAccess() == false)
+                {
+                    GridToPaint.Dispatcher.Invoke(new Action<object>(AddChildren), children);
+                    return;
+                }
 
-            GridToPaint.Children.Add((UIElement)children);
+                GridToPaint.Children.Add((UIElement)children);
+            }
+            catch
+            {
+                // ignore
+            }
         }
     }
 	

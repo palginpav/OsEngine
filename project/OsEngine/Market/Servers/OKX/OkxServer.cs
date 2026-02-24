@@ -35,11 +35,26 @@ namespace OsEngine.Market.Servers.OKX
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParamPassword, "");
-            CreateParameterEnum("Hedge Mode", "On", new List<string> { "On", "Off" });
+            CreateParameterBoolean("Hedge Mode", true);
+            ServerParameters[3].ValueChange += OkxServer_ValueChange;
             CreateParameterEnum("Margin Mode", "Cross", new List<string> { "Cross", "Isolated" });
             CreateParameterBoolean("Use Options", false);
-            CreateParameterEnum("Demo Mode", "Off", new List<string> { "Off", "On" });
+            CreateParameterBoolean("Demo Mode", false);
             CreateParameterBoolean("Extended Data", false);
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
+            ServerParameters[2].Comment = OsLocalization.Market.Label271;
+            ServerParameters[3].Comment = OsLocalization.Market.Label250;
+            ServerParameters[4].Comment = OsLocalization.Market.Label249;
+            ServerParameters[5].Comment = OsLocalization.Market.Label253;
+            ServerParameters[6].Comment = OsLocalization.Market.Label268;
+            ServerParameters[7].Comment = OsLocalization.Market.Label252;
+        }
+
+        private void OkxServer_ValueChange()
+        {
+            ((OkxServerRealization)ServerRealization).HedgeMode = ((ServerParameterBool)ServerParameters[3]).Value;
         }
     }
 
@@ -52,18 +67,48 @@ namespace OsEngine.Market.Servers.OKX
             ServerStatus = ServerConnectStatus.Disconnect;
 
             Thread threadMessageReaderPublic = new Thread(MessageReaderPublic);
-            threadMessageReaderPublic.IsBackground = true;
             threadMessageReaderPublic.Name = "MessageReaderPublic";
             threadMessageReaderPublic.Start();
 
             Thread threadMessageReaderPrivate = new Thread(MessageReaderPrivate);
-            threadMessageReaderPrivate.IsBackground = true;
             threadMessageReaderPrivate.Name = "MessageReaderPrivate";
             threadMessageReaderPrivate.Start();
 
             Thread thread = new Thread(CheckAliveWebSocket);
             thread.Name = "CheckAliveWebSocket";
             thread.Start();
+
+            Thread threadMessageReaderMarketDepthSpot = new Thread(ThreadMessageReaderMarketDepthSpot);
+            threadMessageReaderMarketDepthSpot.Name = "ThreadOkxMessageReaderMarketDepthSpot";
+            threadMessageReaderMarketDepthSpot.Start();
+
+            Thread threadMessageReaderMarketDepthSwap = new Thread(ThreadMessageReaderMarketDepthSwap);
+            threadMessageReaderMarketDepthSwap.Name = "ThreadOkxMessageReaderMarketDepthSwap";
+            threadMessageReaderMarketDepthSwap.Start();
+
+            Thread threadMessageReaderMarketDepthFutures = new Thread(ThreadMessageReaderMarketDepthFutures);
+            threadMessageReaderMarketDepthFutures.Name = "ThreadOkxMessageReaderMarketDepthFutures";
+            threadMessageReaderMarketDepthFutures.Start();
+
+            Thread threadMessageReaderMarketDepthOption = new Thread(ThreadMessageReaderMarketDepthOption);
+            threadMessageReaderMarketDepthOption.Name = "ThreadOkxMessageReaderMarketDepthOption";
+            threadMessageReaderMarketDepthOption.Start();
+
+            Thread threadMessageReaderTradesSpot = new Thread(ThreadMessageReaderTradesSpot);
+            threadMessageReaderTradesSpot.Name = "ThreadOkxMessageReaderTradesSpot";
+            threadMessageReaderTradesSpot.Start();
+
+            Thread threadMessageReaderTradesSwap = new Thread(ThreadMessageReaderTradesSwap);
+            threadMessageReaderTradesSwap.Name = "ThreadOkxMessageReaderTradesSwap";
+            threadMessageReaderTradesSwap.Start();
+
+            Thread threadMessageReaderTradesFutures = new Thread(ThreadMessageReaderTradesFutures);
+            threadMessageReaderTradesFutures.Name = "ThreadOkxMessageReaderTradesFutures";
+            threadMessageReaderTradesFutures.Start();
+
+            Thread threadMessageReaderTradesOption = new Thread(ThreadMessageReaderTradesOption);
+            threadMessageReaderTradesOption.Name = "ThreadOkxMessageReaderTradesOption";
+            threadMessageReaderTradesOption.Start();
         }
 
         private WebProxy _myProxy;
@@ -75,15 +120,7 @@ namespace OsEngine.Market.Servers.OKX
             _publicKey = ((ServerParameterString)ServerParameters[0]).Value;
             _secretKey = ((ServerParameterPassword)ServerParameters[1]).Value;
             _password = ((ServerParameterPassword)ServerParameters[2]).Value;
-
-            if (((ServerParameterEnum)ServerParameters[3]).Value == "On")
-            {
-                _hedgeMode = true;
-            }
-            else
-            {
-                _hedgeMode = false;
-            }
+            HedgeMode = ((ServerParameterBool)ServerParameters[3]).Value;
 
             if (((ServerParameterEnum)ServerParameters[4]).Value == "Cross")
             {
@@ -96,7 +133,7 @@ namespace OsEngine.Market.Servers.OKX
 
             _useOptions = ((ServerParameterBool)ServerParameters[5]).Value;
 
-            if (((ServerParameterEnum)ServerParameters[6]).Value == "Off")
+            if (((ServerParameterBool)ServerParameters[6]).Value == false)
             {
                 _demoMode = false;
             }
@@ -168,8 +205,16 @@ namespace OsEngine.Market.Servers.OKX
                 SendLogMessage(exception.ToString(), LogMessageType.Error);
             }
 
-            FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
-            FIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+            _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+            _fIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+            _queueMessageMarketDepthSpot = new ConcurrentQueue<string>();
+            _queueMessageMarketDepthSwap = new ConcurrentQueue<string>();
+            _queueMessageMarketDepthFutures = new ConcurrentQueue<string>();
+            _queueMessageMarketDepthOption = new ConcurrentQueue<string>();
+            _queueMessageTradesSpot = new ConcurrentQueue<string>();
+            _queueMessageTradesSwap = new ConcurrentQueue<string>();
+            _queueMessageTradesFutures = new ConcurrentQueue<string>();
+            _queueMessageTradesOption = new ConcurrentQueue<string>();
 
             Disconnect();
         }
@@ -196,6 +241,10 @@ namespace OsEngine.Market.Servers.OKX
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -220,6 +269,21 @@ namespace OsEngine.Market.Servers.OKX
 
         private bool _hedgeMode;
 
+        public bool HedgeMode
+        {
+            get { return _hedgeMode; }
+            set
+            {
+                if (value == _hedgeMode)
+                {
+                    return;
+                }
+                _hedgeMode = value;
+
+                SetPositionMode();
+            }
+        }
+
         private string _marginMode;
 
         private bool _useOptions;
@@ -238,7 +302,7 @@ namespace OsEngine.Market.Servers.OKX
         {
             try
             {
-                SecurityResponse securityResponseFutures = GetFuturesSecurities();
+                SecurityResponse securityResponseFutures = GetSwapSecurities();
                 SecurityResponse securityResponseSpot = GetSpotSecurities();
                 securityResponseFutures.data.AddRange(securityResponseSpot.data);
 
@@ -270,7 +334,7 @@ namespace OsEngine.Market.Servers.OKX
             }
         }
 
-        private SecurityResponse GetFuturesSecurities()
+        private SecurityResponse GetSwapSecurities()
         {
             try
             {
@@ -446,10 +510,17 @@ namespace OsEngine.Market.Servers.OKX
             }
         }
 
-        private List<Security> _securities = new List<Security>();
+        private Dictionary<string, Security> _securitiesDict = new Dictionary<string, Security>();
 
         private void UpdatePairs(SecurityResponse securityResponse)
         {
+            if (_securitiesDict == null)
+            {
+                _securitiesDict = new Dictionary<string, Security>();
+            }
+
+            List<Security> securities = new List<Security>();
+
             for (int i = 0; i < securityResponse.data.Count; i++)
             {
                 SecurityResponseItem item = securityResponse.data[i];
@@ -458,9 +529,12 @@ namespace OsEngine.Market.Servers.OKX
 
                 SecurityType securityType = SecurityType.CurrencyPair;
 
-                if (item.instType.Equals("SWAP") || item.instType.Equals("FUTURES"))
+                if (item.instType.Equals("SWAP")
+                    || item.instType.Equals("FUTURES"))
                 {
                     securityType = SecurityType.Futures;
+
+
                 }
                 else if (item.instType.Equals("OPTION"))
                 {
@@ -497,22 +571,19 @@ namespace OsEngine.Market.Servers.OKX
 
                 if (securityType == SecurityType.Futures)
                 {
-                    if (item.instId.Contains("-USD-"))
+                    if (item.ctType == "linear")
                     {
-                        security.NameClass = "SWAP_USD";
+                        security.NameClass = $"Linear_{item.instType}_{item.settleCcy}";
                     }
-                    else if (item.instId.Contains("-USDT-"))
+                    else if (item.ctType == "inverse")
                     {
-                        security.NameClass = "Futures_USDT";
-                    }
-                    else
-                    {
-                        security.NameClass = "SWAP_" + item.settleCcy;
+                        security.NameClass = $"Inverse_{item.instType}_{item.ctValCcy}";
                     }
 
                     security.NameId = item.instId + "_" + item.ctVal.ToDecimal();
                     security.MinTradeAmount = item.minSz.ToDecimal() * item.ctVal.ToDecimal();
                     security.VolumeStep = item.lotSz.ToDecimal() * item.ctVal.ToDecimal();
+                    security.DecimalsVolume = security.MinTradeAmount.ToString().DecimalsCount();
                     security.UnderlyingAsset = item.uly;
 
                     if (item.expTime != "")
@@ -538,7 +609,7 @@ namespace OsEngine.Market.Servers.OKX
                     string baseName = item.uly + "T"; // example: BTC-USD -> BTC-USDT
 
                     // 1. Find all futures that are true quarterly futures (expire on last Friday of Mar, Jun, Sep, Dec)
-                    var quarterlyFutures = _securities
+                    var quarterlyFutures = securities
                         .Where(s => s.SecurityType == SecurityType.Futures &&
                                     s.Name.StartsWith(baseName) &&
                                     s.Expiration != DateTime.MinValue &&
@@ -599,12 +670,22 @@ namespace OsEngine.Market.Servers.OKX
                 }
 
                 security.State = SecurityStateType.Activ;
-                _securities.Add(security);
+                securities.Add(security);
+            }
+
+            if (securities.Count > 0)
+            {
+                securities = securities.OrderBy(s => s.Name).ToList();
+            }
+
+            foreach (Security sec in securities)
+            {
+                _securitiesDict[sec.Name] = sec;
             }
 
             if (SecurityEvent != null)
             {
-                SecurityEvent(_securities);
+                SecurityEvent(securities);
             }
         }
 
@@ -651,18 +732,20 @@ namespace OsEngine.Market.Servers.OKX
             endTime = DateTime.SpecifyKind(endTime, DateTimeKind.Utc);
             actualTime = DateTime.SpecifyKind(actualTime, DateTimeKind.Utc);
 
+            int tfTotalMinutes = (int)timeFrameBuilder.TimeFrameTimeSpan.TotalMinutes;
+            int CountCandlesNeedToLoad = GetCountCandlesFromTimeInterval(startTime, endTime, timeFrameBuilder.TimeFrameTimeSpan);
+
             if (startTime < DateTime.UtcNow.AddMonths(-3))
             {
-                SendLogMessage("History more than 3 months is not supported by Api", LogMessageType.Error);
-                return null;
+                startTime = endTime.AddDays(-90);
+                CountCandlesNeedToLoad = GetCountCandlesFromTimeInterval(startTime, endTime, timeFrameBuilder.TimeFrameTimeSpan);
+                SendLogMessage("Candlestick data history for a period longer than 3 months is not supported by the API.", LogMessageType.Error);
             }
 
             if (!CheckTime(startTime, endTime, actualTime))
             {
                 return null;
             }
-
-            int tfTotalMinutes = (int)timeFrameBuilder.TimeFrameTimeSpan.TotalMinutes;
 
             if (!CheckTf(tfTotalMinutes))
             {
@@ -673,8 +756,6 @@ namespace OsEngine.Market.Servers.OKX
             {
                 endTime = DateTime.UtcNow;
             }
-
-            int CountCandlesNeedToLoad = GetCountCandlesFromTimeInterval(startTime, endTime, timeFrameBuilder.TimeFrameTimeSpan);
 
             List<Candle> candles = GetCandleDataHistory(security.Name, timeFrameBuilder.TimeFrameTimeSpan, CountCandlesNeedToLoad, TimeManager.GetTimeStampMilliSecondsToDateTime(endTime), isOsData);
 
@@ -1022,9 +1103,9 @@ namespace OsEngine.Market.Servers.OKX
         {
             try
             {
-                if (FIFOListWebSocketPublicMessage == null)
+                if (_fIFOListWebSocketPublicMessage == null)
                 {
-                    FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+                    _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
                 }
 
                 _webSocketPublic.Add(CreateNewPublicSocket());
@@ -1229,7 +1310,7 @@ namespace OsEngine.Market.Servers.OKX
 
             dict["posMode"] = "net_mode";
 
-            if (_hedgeMode)
+            if (HedgeMode)
             {
                 dict["posMode"] = "long_short_mode";
             }
@@ -1325,12 +1406,12 @@ namespace OsEngine.Market.Servers.OKX
                     return;
                 }
 
-                if (FIFOListWebSocketPublicMessage == null)
+                if (_fIFOListWebSocketPublicMessage == null)
                 {
                     return;
                 }
 
-                FIFOListWebSocketPublicMessage.Enqueue(e.Data);
+                _fIFOListWebSocketPublicMessage.Enqueue(e.Data);
             }
             catch (Exception error)
             {
@@ -1426,15 +1507,15 @@ namespace OsEngine.Market.Servers.OKX
 
                 if (e.Data.Contains("error"))
                 {
-                    SendLogMessage("Error received from server: "+ e.Data.ToString(), LogMessageType.Error);
+                    SendLogMessage("Error received from server: " + e.Data.ToString(), LogMessageType.Error);
                 }
 
-                if (FIFOListWebSocketPrivateMessage == null)
+                if (_fIFOListWebSocketPrivateMessage == null)
                 {
                     return;
                 }
 
-                FIFOListWebSocketPrivateMessage.Enqueue(e.Data);
+                _fIFOListWebSocketPrivateMessage.Enqueue(e.Data);
             }
             catch (Exception error)
             {
@@ -1482,6 +1563,11 @@ namespace OsEngine.Market.Servers.OKX
                 try
                 {
                     Thread.Sleep(20000);
+
+                    if (IsCompletelyDeleted == true)
+                    {
+                        return;
+                    }
 
                     if (ServerStatus == ServerConnectStatus.Disconnect)
                     {
@@ -1731,54 +1817,58 @@ namespace OsEngine.Market.Servers.OKX
         {
             try
             {
-                for (int i = 0; i < _webSocketPublic.Count; i++)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
-                    WebSocket webSocketPublic = _webSocketPublic[i];
-
-                    try
+                    for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
-                        if (webSocketPublic != null && webSocketPublic?.ReadyState == WebSocketState.Open)
+                        WebSocket webSocketPublic = _webSocketPublic[i];
+
+                        try
                         {
-                            if (_subscribedSecurities != null)
+                            if (webSocketPublic != null && webSocketPublic?.ReadyState == WebSocketState.Open)
                             {
-                                foreach (var item in _subscribedSecurities)
+                                if (_subscribedSecurities != null)
                                 {
-                                    string name = item.Key;
-                                    webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"books5\",\"instId\": \"{name}\"}}]}}");
-                                    webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"trade\",\"instId\": \"{name}\"}}]}}");
-
-                                    if (_extendedMarketData)
+                                    foreach (var item in _subscribedSecurities)
                                     {
-                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"tickers\",\"instId\": \"{name}\"}}]}}");
+                                        string name = item.Key;
+                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"books5\",\"instId\": \"{name}\"}}]}}");
+                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"trade\",\"instId\": \"{name}\"}}]}}");
 
-                                        if (name.Contains("SWAP"))
+                                        if (_extendedMarketData)
                                         {
-                                            webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"open-interest\",\"instId\": \"{name}\"}}]}}");
-                                            webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"funding-rate\",\"instId\": \"{name}\"}}]}}");
+                                            webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"tickers\",\"instId\": \"{name}\"}}]}}");
+
+                                            if (name.Contains("SWAP"))
+                                            {
+                                                webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"open-interest\",\"instId\": \"{name}\"}}]}}");
+                                                webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"funding-rate\",\"instId\": \"{name}\"}}]}}");
+                                            }
+                                        }
+
+                                        if (item.Value)
+                                        {
+                                            //option
+                                            webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"mark-price\",\"instId\": \"{name}\"}}]}}");
                                         }
                                     }
-
-                                    if (item.Value)
-                                    {
-                                        //option
-                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"mark-price\",\"instId\": \"{name}\"}}]}}");
-                                    }
                                 }
-                            }
 
-                            if (_baseOptionSerurities != null)
-                            {
-                                foreach (string name in _baseOptionSerurities)
+                                if (_baseOptionSerurities != null)
                                 {
-                                    webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"opt-summary\",\"instFamily\": \"{name}\"}}]}}");
-                                    webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"mark-price\",\"instId\": \"{name}-SWAP\"}}]}}");
+                                    foreach (string name in _baseOptionSerurities)
+                                    {
+                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"opt-summary\",\"instFamily\": \"{name}\"}}]}}");
+                                        webSocketPublic.SendAsync($"{{\"op\": \"unsubscribe\",\"args\": [{{\"channel\": \"mark-price\",\"instId\": \"{name}-SWAP\"}}]}}");
+                                    }
                                 }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        SendLogMessage($"{ex.Message} {ex.StackTrace}", LogMessageType.Error);
+                        catch (Exception ex)
+                        {
+                            SendLogMessage($"{ex.Message} {ex.StackTrace}", LogMessageType.Error);
+                        }
                     }
                 }
             }
@@ -1816,95 +1906,153 @@ namespace OsEngine.Market.Servers.OKX
 
         #region 10 WebSocket parsing the messages
 
-        private ConcurrentQueue<string> FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+        private ConcurrentQueue<string> _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
 
-        private ConcurrentQueue<string> FIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+        private ConcurrentQueue<string> _fIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageMarketDepthSpot = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageMarketDepthSwap = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageMarketDepthFutures = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageMarketDepthOption = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageTradesSpot = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageTradesSwap = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageTradesFutures = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageTradesOption = new ConcurrentQueue<string>();
 
         private void MessageReaderPublic()
         {
-            Thread.Sleep(5000);
-
             while (true)
             {
                 try
                 {
-                    if (ServerStatus == ServerConnectStatus.Disconnect)
+                    if (_fIFOListWebSocketPublicMessage.IsEmpty)
                     {
-                        Thread.Sleep(1000);
-                        continue;
-                    }
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
 
-                    if (FIFOListWebSocketPublicMessage.IsEmpty)
-                    {
                         Thread.Sleep(1);
-                        continue;
-                    }
-
-                    string message = null;
-
-                    FIFOListWebSocketPublicMessage.TryDequeue(out message);
-
-                    if (message == null)
-                    {
-                        continue;
-                    }
-
-                    ResponseWsMessageAction<object> action = JsonConvert.DeserializeAnonymousType(message, new ResponseWsMessageAction<object>());
-
-                    if (action.@event != null && action.@event.Contains("subscribe"))
-                    {
-                        //ignore
-                        //SendLogMessage("[WS Public] Got subscribe msg: " + action.msg, LogMessageType.System);
-                    }
-                    else if (action.arg != null)
-                    {
-                        if (action.arg.channel.Equals("books5"))
-                        {
-                            UpdateMarketDepth(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("trades"))
-                        {
-                            UpdateTrades(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("opt-summary"))
-                        {
-                            UpdateOptionSummary(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("open-interest"))
-                        {
-                            UpdateOpenInterest(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("funding-rate"))
-                        {
-                            UpdateFundingRate(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("tickers"))
-                        {
-                            UpdateTickers(message);
-                            continue;
-                        }
-
-                        if (action.arg.channel.Equals("mark-price"))
-                        {
-                            UpdateMarkPrice(message);
-                            continue;
-                        }
                     }
                     else
                     {
-                        if (action.@event != null && action.@event.Equals("error"))
+                        string message = null;
+
+                        _fIFOListWebSocketPublicMessage.TryDequeue(out message);
+
+                        if (message == null)
                         {
-                            SendLogMessage("[WS Public] Got error msg: " + action.msg, LogMessageType.Error);
+                            continue;
+                        }
+
+                        ResponseWsMessageAction<object> action = JsonConvert.DeserializeAnonymousType(message, new ResponseWsMessageAction<object>());
+
+                        if (action.@event != null && action.@event.Contains("subscribe"))
+                        {
+                            //ignore
+                            //SendLogMessage("[WS Public] Got subscribe msg: " + action.msg, LogMessageType.System);
+                        }
+                        else if (action.arg != null)
+                        {
+                            if (action.arg.channel.Equals("books5"))
+                            {
+                                if (action.arg.instId.EndsWith("SWAP"))
+                                {
+                                    _queueMessageMarketDepthSwap.Enqueue(message);
+                                }
+                                else if (action.arg.instId.EndsWith("P")
+                                    || action.arg.instId.EndsWith("C"))
+                                {
+                                    _queueMessageMarketDepthOption.Enqueue(message);
+                                }
+                                else
+                                {
+                                    bool endsWithDigit = Char.IsDigit(action.arg.instId[action.arg.instId.Length - 1]);
+
+                                    if (endsWithDigit)
+                                    {
+                                        _queueMessageMarketDepthFutures.Enqueue(message);
+                                    }
+                                    else
+                                    {
+                                        _queueMessageMarketDepthSpot.Enqueue(message);
+                                    }
+                                }
+
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("trades"))
+                            {
+                                if (action.arg.instId.EndsWith("SWAP"))
+                                {
+                                    _queueMessageTradesSwap.Enqueue(message);
+                                }
+                                else if (action.arg.instId.EndsWith("P")
+                                    || action.arg.instId.EndsWith("C"))
+                                {
+                                    _queueMessageTradesOption.Enqueue(message);
+                                }
+                                else
+                                {
+                                    bool endsWithDigit = Char.IsDigit(action.arg.instId[action.arg.instId.Length - 1]);
+
+                                    if (endsWithDigit)
+                                    {
+                                        _queueMessageTradesFutures.Enqueue(message);
+                                    }
+                                    else
+                                    {
+                                        _queueMessageTradesSpot.Enqueue(message);
+                                    }
+                                }
+
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("opt-summary"))
+                            {
+                                UpdateOptionSummary(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("open-interest"))
+                            {
+                                UpdateOpenInterest(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("funding-rate"))
+                            {
+                                UpdateFundingRate(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("tickers"))
+                            {
+                                UpdateTickers(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("mark-price"))
+                            {
+                                UpdateMarkPrice(message);
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            if (action.@event != null && action.@event.Equals("error"))
+                            {
+                                SendLogMessage("[WS Public] Got error msg: " + action.msg, LogMessageType.Error);
+                            }
                         }
                     }
                 }
@@ -1918,53 +2066,58 @@ namespace OsEngine.Market.Servers.OKX
 
         private void MessageReaderPrivate()
         {
-            Thread.Sleep(5000);
-
             while (true)
             {
                 try
                 {
-                    if (ServerStatus == ServerConnectStatus.Disconnect)
+                    if (_fIFOListWebSocketPrivateMessage.IsEmpty)
                     {
-                        Thread.Sleep(1000);
-                        continue;
-                    }
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
 
-                    if (FIFOListWebSocketPrivateMessage.IsEmpty)
-                    {
                         Thread.Sleep(1);
-                        continue;
                     }
-
-                    string message = null;
-
-                    FIFOListWebSocketPrivateMessage.TryDequeue(out message);
-
-                    if (message == null)
+                    else
                     {
-                        continue;
-                    }
+                        string message = null;
 
-                    ResponseWsMessageAction<object> action = JsonConvert.DeserializeAnonymousType(message, new ResponseWsMessageAction<object>());
+                        _fIFOListWebSocketPrivateMessage.TryDequeue(out message);
 
-                    if (action.arg != null)
-                    {
-                        if (action.arg.channel.Equals("account"))
+                        if (message == null)
                         {
-                            UpdateAccount(message);
                             continue;
                         }
 
-                        if (action.arg.channel.Equals("positions"))
-                        {
-                            UpdatePositions(message);
-                            continue;
-                        }
+                        ResponseWsMessageAction<object> action = JsonConvert.DeserializeAnonymousType(message, new ResponseWsMessageAction<object>());
 
-                        if (action.arg.channel.Equals("orders"))
+                        if (action.arg != null)
                         {
-                            UpdateOrder(message);
-                            continue;
+                            if (action.arg.channel.Equals("account"))
+                            {
+                                UpdateAccount(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("positions"))
+                            {
+                                UpdatePositions(message);
+                                continue;
+                            }
+
+                            if (action.arg.channel.Equals("orders"))
+                            {
+                                UpdateOrder(message);
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            if (action.@event != null && action.@event.Equals("error"))
+                            {
+                                SendLogMessage("[WS Private] Got error msg: " + action.msg, LogMessageType.Error);
+                            }
                         }
                     }
                 }
@@ -2006,7 +2159,8 @@ namespace OsEngine.Market.Servers.OKX
 
                             pos.PortfolioName = "OKX";
 
-                            if (item.instId.Contains("SWAP"))
+                            if (item.instId.Contains("SWAP")
+                                || item.instType == "FUTURES")
                             {
                                 if (item.posSide.Contains("long"))
                                 {
@@ -2047,7 +2201,7 @@ namespace OsEngine.Market.Servers.OKX
                     SendLogMessage("OKX ERROR. NO POSITIONS IN REQUEST.", LogMessageType.Error);
                 }
 
-                PortfolioEvent(Portfolios);
+                PortfolioEvent?.Invoke(Portfolios);
             }
             catch (Exception ex)
             {
@@ -2123,11 +2277,275 @@ namespace OsEngine.Market.Servers.OKX
                     portfolio.SetNewPosition(pos);
                 }
 
-                PortfolioEvent(Portfolios);
+                PortfolioEvent?.Invoke(Portfolios);
             }
             catch (Exception ex)
             {
                 SendLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        private void ThreadMessageReaderTradesOption()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageTradesOption.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageTradesOption.TryDequeue(out message))
+                        {
+                            UpdateTrades(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderTradesFutures()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageTradesFutures.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageTradesFutures.TryDequeue(out message))
+                        {
+                            UpdateTrades(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderTradesSwap()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageTradesSwap.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageTradesSwap.TryDequeue(out message))
+                        {
+                            UpdateTrades(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderTradesSpot()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageTradesSpot.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageTradesSpot.TryDequeue(out message))
+                        {
+                            UpdateTrades(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderMarketDepthOption()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageMarketDepthOption.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageMarketDepthOption.TryDequeue(out message))
+                        {
+                            UpdateMarketDepth(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderMarketDepthFutures()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageMarketDepthFutures.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageMarketDepthFutures.TryDequeue(out message))
+                        {
+                            UpdateMarketDepth(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderMarketDepthSwap()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageMarketDepthSwap.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageMarketDepthSwap.TryDequeue(out message))
+                        {
+                            UpdateMarketDepth(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderMarketDepthSpot()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageMarketDepthSpot.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageMarketDepthSpot.TryDequeue(out message))
+                        {
+                            UpdateMarketDepth(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
             }
         }
 
@@ -2202,7 +2620,7 @@ namespace OsEngine.Market.Servers.OKX
 
                 _lastTimeMd = marketDepth.Time;
 
-                MarketDepthEvent(marketDepth);
+                MarketDepthEvent?.Invoke(marketDepth);
 
             }
             catch (Exception error)
@@ -2320,23 +2738,34 @@ namespace OsEngine.Market.Servers.OKX
                         myTrade.NumberOrderParent = item.ordId.ToString();
                         myTrade.NumberTrade = item.tradeId.ToString();
 
-                        if (item.instId.Contains("SWAP"))
+                        if (item.instId.Contains("SWAP")
+                            || item.instType == "FUTURES")
                         {
-                            if (string.IsNullOrEmpty(item.fee))
-                            {
-                                myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
-                            }
-                            else
-                            {// there is a commission
-                                if (item.instId.StartsWith(item.feeCcy))
-                                { // the commission is taken in the traded currency, not in the exchange currency
-                                    myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId) + item.fee.ToDecimal();
-                                }
-                                else
-                                {
-                                    myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
-                                }
-                            }
+                            myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+
+                            //if (string.IsNullOrEmpty(item.fee))
+                            //{
+                            //    myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                            //}
+                            //else
+                            //{
+                            //    if (item.instId.EndsWith("USDT"))
+                            //    {
+                            //        // there is a commission
+                            //        if (item.instId.StartsWith(item.feeCcy))
+                            //        { // the commission is taken in the traded currency, not in the exchange currency
+                            //            myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId) + item.fee.ToDecimal();
+                            //        }
+                            //        else
+                            //        {
+                            //            myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                            //        }
+                            //    }
+                            //   else
+                            //    {
+                            //        myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                            //    }
+                            //}
                         }
                         else
                         {
@@ -2364,7 +2793,7 @@ namespace OsEngine.Market.Servers.OKX
 
                         myTrade.Side = item.side.Equals("buy") ? Side.Buy : Side.Sell;
 
-                        MyTradeEvent(myTrade);
+                        MyTradeEvent?.Invoke(myTrade);
                     }
                 }
             }
@@ -2406,7 +2835,8 @@ namespace OsEngine.Market.Servers.OKX
             newOrder.NumberMarket = item.ordId.ToString();
             newOrder.Side = item.side.Equals("buy") ? Side.Buy : Side.Sell;
 
-            if (item.instId.Contains("SWAP"))
+            if (item.instId.Contains("SWAP")
+                || item.instType == "FUTURES")
             {
                 newOrder.Volume = item.sz.ToDecimal() * GetVolume(item.instId);
             }
@@ -2694,7 +3124,8 @@ namespace OsEngine.Market.Servers.OKX
         {
             _rateGateOrder.WaitToProceed();
 
-            if (order.SecurityNameCode.Contains("SWAP"))
+            if (order.SecurityNameCode.Contains("SWAP")
+                || order.SecurityClassCode.Contains("FUTURES"))
             {
                 SendOrderSwap(order);
             }
@@ -2765,7 +3196,7 @@ namespace OsEngine.Market.Servers.OKX
             {
                 string posSide = "net";
 
-                if (_hedgeMode)
+                if (HedgeMode)
                 {
                     posSide = order.Side == Side.Buy ? "long" : "short";
 
@@ -2827,12 +3258,9 @@ namespace OsEngine.Market.Servers.OKX
         {
             decimal minVolume = 1;
 
-            for (int i = 0; i < _securities.Count; i++)
+            if (_securitiesDict.TryGetValue(securityName, out Security sec))
             {
-                if (_securities[i].Name == securityName)
-                {
-                    minVolume = _securities[i].NameId.Split('_')[1].ToDecimal();
-                }
+                minVolume = sec.NameId.Split('_')[1].ToDecimal();
             }
 
             if (minVolume <= 0)
@@ -2967,6 +3395,8 @@ namespace OsEngine.Market.Servers.OKX
             {
                 ordersOpenAll.AddRange(orders);
             }
+
+            ordersOpenAll = ordersOpenAll.OrderByDescending(order => order.TimeCreate).ToList();
 
             return ordersOpenAll;
         }
@@ -3128,7 +3558,21 @@ namespace OsEngine.Market.Servers.OKX
             {
                 _rateGateGenerateToTrade.WaitToProceed();
 
-                string TypeInstr = order.SecurityNameCode.EndsWith("SWAP") ? "SWAP" : "SPOT";
+                string TypeInstr = "SPOT";
+
+                if (order.SecurityNameCode.EndsWith("SWAP"))
+                {
+                    TypeInstr = "SWAP";
+                }
+                else
+                {
+                    int dashCount = order.SecurityNameCode.Count(c => c == '-');
+
+                    if (dashCount == 2)
+                    {
+                        TypeInstr = "FUTURES";
+                    }
+                }
 
                 string url = $"{_baseUrl}/api/v5/trade/fills-history?ordId={order.NumberMarket}&instId={order.SecurityNameCode}&instType={TypeInstr}";
 
@@ -3155,23 +3599,34 @@ namespace OsEngine.Market.Servers.OKX
                             myTrade.NumberOrderParent = item.ordId.ToString();
                             myTrade.NumberTrade = item.tradeId.ToString();
 
-                            if (item.instId.Contains("SWAP"))
+                            if (item.instId.Contains("SWAP")
+                                || item.instType == "FUTURES")
                             {
-                                if (string.IsNullOrEmpty(item.fee))
-                                {
-                                    myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
-                                }
-                                else
-                                {// there is a commission
-                                    if (item.instId.StartsWith(item.feeCcy))
-                                    { // the commission is taken in the traded currency, not in the exchange currency
-                                        myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId) + item.fee.ToDecimal();
-                                    }
-                                    else
-                                    {
-                                        myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
-                                    }
-                                }
+                                myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+
+                                //if (string.IsNullOrEmpty(item.fee))
+                                //{
+                                //    myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                                //}
+                                //else
+                                //{
+                                //    if (item.instId.EndsWith("USDT"))
+                                //    {
+                                //        // there is a commission
+                                //        if (item.instId.StartsWith(item.feeCcy))
+                                //        { // the commission is taken in the traded currency, not in the exchange currency
+                                //            myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId) + item.fee.ToDecimal();
+                                //        }
+                                //        else
+                                //        {
+                                //            myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                                //        }
+                                //    }
+                                //    else
+                                //    {
+                                //        myTrade.Volume = item.fillSz.ToDecimal() * GetVolume(item.instId);
+                                //    }
+                                //}
                             }
                             else
                             {
@@ -3278,23 +3733,37 @@ namespace OsEngine.Market.Servers.OKX
         {
             List<Order> ordersOpenAll = new List<Order>();
 
-            List<Order> orders = new List<Order>();
+            List<Order> swapOrders = new List<Order>();
+            GetAllHistoricalOrders(swapOrders, maxCountByCategory, "SWAP");
 
-            for (int i = 0; i < _instType.Count; i++)
+            if (swapOrders != null
+                && swapOrders.Count > 0)
             {
-                GetAllHistoricalOrders(orders, 100, _instType[i]);
+                ordersOpenAll.AddRange(swapOrders);
             }
 
-            if (orders != null
-                && orders.Count > 0)
+            List<Order> spotOrders = new List<Order>();
+            GetAllHistoricalOrders(spotOrders, maxCountByCategory, "SPOT");
+
+            if (spotOrders != null
+                && spotOrders.Count > 0)
             {
-                ordersOpenAll.AddRange(orders);
+                ordersOpenAll.AddRange(spotOrders);
             }
+
+            List<Order> futuresOrders = new List<Order>();
+            GetAllHistoricalOrders(futuresOrders, maxCountByCategory, "FUTURES");
+
+            if (futuresOrders != null
+                && futuresOrders.Count > 0)
+            {
+                ordersOpenAll.AddRange(futuresOrders);
+            }
+
+            ordersOpenAll = ordersOpenAll.OrderByDescending(order => order.TimeCreate).ToList();
 
             return ordersOpenAll;
         }
-
-        private List<string> _instType = new List<string>() { "SWAP", "SPOT" };
 
         private void GetAllHistoricalOrders(List<Order> array, int maxCount, string instType)
         {
@@ -3385,6 +3854,8 @@ namespace OsEngine.Market.Servers.OKX
             HttpClient _client = new HttpClient(new HttpInterceptor(_publicKey, _secretKey, _password, null, _demoMode, _myProxy));
             return _client.GetAsync(url).Result;
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

@@ -96,7 +96,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetFutures
 
         public bool DataFeedTfDayCanLoad
         {
-            get { return false; }
+            get { return true; }
         }
 
         public bool DataFeedTfTickCanLoad
@@ -140,7 +140,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetFutures
                 TimeFrameHour1IsOn = true,
                 TimeFrameHour2IsOn = false,
                 TimeFrameHour4IsOn = true,
-                TimeFrameDayIsOn = false
+                TimeFrameDayIsOn = true
             };
 
         public bool MarketOrdersIsSupport
@@ -296,7 +296,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetFutures
             get { return 10; }
         }
 
-        public string[] IpAddresServer
+        public string[] IpAddressServer
         {
             get
             {
@@ -307,6 +307,36 @@ namespace OsEngine.Market.Servers.BitGet.BitGetFutures
 
                 return pingIpDomens;
             }
+        }
+
+        public bool Leverage_IsSupports
+        {
+            get { return true; }
+        }
+
+        public decimal Leverage_StandardValue
+        {
+            get { return 10; }
+        }
+
+        public string[] Leverage_SupportClasses
+        {
+            get
+            {
+                string[] listClasses = new string[]
+                {
+                    "USDT-FUTURES",
+                    "COIN-FUTURES",
+                    "USDC-FUTURES"
+                };
+
+                return listClasses;
+            }
+        }
+
+        public bool CanChangeOrderMarketNumber
+        {
+            get { return false; }
         }
 
         #endregion

@@ -130,6 +130,10 @@ namespace OsEngine.Market.Servers.InteractiveBrokers
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region Properties
@@ -1302,6 +1306,8 @@ contract =>
         {
             return null;
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

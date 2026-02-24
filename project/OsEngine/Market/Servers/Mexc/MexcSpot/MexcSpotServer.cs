@@ -15,6 +15,7 @@ using RestSharp;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -34,6 +35,9 @@ namespace OsEngine.Market.Servers.Mexc
 
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
         }
     }
 
@@ -47,17 +51,28 @@ namespace OsEngine.Market.Servers.Mexc
             worker.Name = "CheckAliveMexc";
             worker.Start();
 
-            Thread worker2 = new Thread(MessageReaderPublic);
-            worker2.Name = "MessageReaderPublicMexcSpot";
-            worker2.Start();
+            Thread threadMessageReaderPublic = new Thread(MessageReaderPublic);
+            threadMessageReaderPublic.Name = "MessageReaderPublicMexcSpot";
+            threadMessageReaderPublic.Start();
 
-            Thread worker3 = new Thread(MessageReaderPrivate);
-            worker3.Name = "MessageReaderPrivateMexcSpot";
-            worker3.Start();
+            Thread threadMessageReaderPrivate = new Thread(MessageReaderPrivate);
+            threadMessageReaderPrivate.Name = "MessageReaderPrivateMexcSpot";
+            threadMessageReaderPrivate.Start();
+
+            Thread threadMessageReaderMarketDepth = new Thread(ThreadMessageReaderMarketDepth);
+            threadMessageReaderMarketDepth.Name = "ThreadMexcMessageReaderMarketDepth";
+            threadMessageReaderMarketDepth.Start();
+
+            Thread threadMessageReaderTrades = new Thread(ThreadMessageReaderTrades);
+            threadMessageReaderTrades.Name = "ThreadMexcMessageReaderTrades";
+            threadMessageReaderTrades.Start();
         }
+
+        private WebProxy _myProxy;
 
         public void Connect(WebProxy proxy)
         {
+            _myProxy = proxy;
             _publicKey = ((ServerParameterString)ServerParameters[0]).Value;
             _secretKey = ((ServerParameterPassword)ServerParameters[1]).Value;
 
@@ -72,17 +87,19 @@ namespace OsEngine.Market.Servers.Mexc
             try
             {
                 RestClient client = new RestClient(_baseUrl);
+
+                if (_myProxy != null)
+                {
+                    client.Proxy = _myProxy;
+                }
+
                 RestRequest request = new RestRequest("/api/v3/time", Method.GET);
                 IRestResponse responseMessage = client.Execute(request);
 
-                if (responseMessage.StatusCode == System.Net.HttpStatusCode.OK)
+                if (responseMessage.StatusCode == HttpStatusCode.OK)
                 {
                     _lastTimeProlongListenKey = DateTime.Now;
-                    _FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
-                    _FIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
-
                     CreateWebSocketPrivateConnection();
-                    //CheckActivationSockets();
                 }
                 else
                 {
@@ -125,9 +142,14 @@ namespace OsEngine.Market.Servers.Mexc
                 SendLogMessage(exception.ToString(), LogMessageType.Error);
             }
 
-            _securities.Clear();
             _myPortfolios.Clear();
             _subscribedSecurities.Clear();
+
+            _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+            _fIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+
+            _queueMessageMarketDepth = new ConcurrentQueue<string>();
+            _queueMessageTrades = new ConcurrentQueue<string>();
 
             Disconnect();
         }
@@ -151,6 +173,10 @@ namespace OsEngine.Market.Servers.Mexc
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -167,28 +193,9 @@ namespace OsEngine.Market.Servers.Mexc
 
         #region 3 Securities
 
-        private List<Security> _securities = new List<Security>();
-
-        List<string> _activeSecurities = new List<string>();
-
-        private RateGate _rateGateSecurities = new RateGate(50, TimeSpan.FromMilliseconds(10000));
+        private RateGate _rateGateSecurities = new RateGate(1, TimeSpan.FromMilliseconds(200));
 
         public void GetSecurities()
-        {
-            UpdateSec();
-
-            if (_securities.Count > 0)
-            {
-                SendLogMessage("Securities loaded. Count: " + _securities.Count, LogMessageType.System);
-
-                if (SecurityEvent != null)
-                {
-                    SecurityEvent.Invoke(_securities);
-                }
-            }
-        }
-
-        private void UpdateSec()
         {
             _rateGateSecurities.WaitToProceed();
 
@@ -196,22 +203,30 @@ namespace OsEngine.Market.Servers.Mexc
             {
                 RestRequest requestRest = new RestRequest("/api/v3/exchangeInfo", Method.GET);
                 RestClient client = new RestClient(_baseUrl);
+
+                if (_myProxy != null)
+                {
+                    client.Proxy = _myProxy;
+                }
+
                 IRestResponse response = client.Execute(requestRest);
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
-                    MexcSecurityList securities = JsonConvert.DeserializeAnonymousType(response.Content, new MexcSecurityList());
+                    MexcSecurityList securitiesResponse = JsonConvert.DeserializeAnonymousType(response.Content, new MexcSecurityList());
 
-                    if (securities == null
-                        || securities.symbols == null
-                        || securities.symbols.Count == 0)
+                    if (securitiesResponse == null
+                        || securitiesResponse.symbols == null
+                        || securitiesResponse.symbols.Count == 0)
                     {
                         return;
                     }
 
-                    for (int i = 0; i < securities.symbols.Count; i++)
+                    List<Security> securities = new List<Security>();
+
+                    for (int i = 0; i < securitiesResponse.symbols.Count; i++)
                     {
-                        MexcSecurity sec = securities.symbols[i];
+                        MexcSecurity sec = securitiesResponse.symbols[i];
 
                         if (sec.isSpotTradingAllowed == "false")
                         {
@@ -240,7 +255,22 @@ namespace OsEngine.Market.Servers.Mexc
                         security.MinTradeAmountType = MinTradeAmountType.C_Currency;
                         security.VolumeStep = GetStep(Convert.ToInt32(sec.baseAssetPrecision));
 
-                        _securities.Add(security);
+                        securities.Add(security);
+                    }
+
+                    if (securities.Count > 0)
+                    {
+                        securities = securities.OrderBy(s => s.Name).ToList();
+                    }
+
+                    if (securities.Count > 0)
+                    {
+                        SendLogMessage("Securities loaded. Count: " + securities.Count, LogMessageType.System);
+
+                        if (SecurityEvent != null)
+                        {
+                            SecurityEvent.Invoke(securities);
+                        }
                     }
                 }
                 else
@@ -283,7 +313,7 @@ namespace OsEngine.Market.Servers.Mexc
 
         private string _portfolioName = "MexcSpot";
 
-        private RateGate _rateGatePortfolio = new RateGate(50, TimeSpan.FromMilliseconds(10000));
+        private RateGate _rateGatePortfolio = new RateGate(1, TimeSpan.FromMilliseconds(200));
 
         public void GetPortfolios()
         {
@@ -386,7 +416,6 @@ namespace OsEngine.Market.Servers.Mexc
             return candles;
         }
 
-        //private readonly HashSet<int> _allowedTf = new HashSet<int> {1,5,15,30,60,240,1440,10080};
         private readonly Dictionary<int, string> _allowedTf = new Dictionary<int, string>()
         {
             { 1, "1m"},
@@ -512,6 +541,12 @@ namespace OsEngine.Market.Servers.Mexc
             {
                 RestRequest requestRest = new RestRequest(endPoint, Method.GET);
                 RestClient client = new RestClient(_baseUrl);
+
+                if (_myProxy != null)
+                {
+                    client.Proxy = _myProxy;
+                }
+
                 IRestResponse response = client.Execute(requestRest);
 
                 if (response.StatusCode == HttpStatusCode.OK)
@@ -628,12 +663,17 @@ namespace OsEngine.Market.Servers.Mexc
             {
                 lock (_socketLocker)
                 {
-                    if (_FIFOListWebSocketPublicMessage == null)
+                    if (_fIFOListWebSocketPublicMessage == null)
                     {
-                        _FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+                        _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
                     }
 
                     WebSocket _webSocketPublic = new WebSocket(_ws);
+
+                    if (_myProxy != null)
+                    {
+                        _webSocketPublic.SetProxy(_myProxy);
+                    }
 
                     _webSocketPublic.EmitOnPing = true;
                     _webSocketPublic.OnOpen += _webSocketPublic_OnOpen;
@@ -659,7 +699,7 @@ namespace OsEngine.Market.Servers.Mexc
             {
                 lock (_socketLocker)
                 {
-                    _FIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+                    _fIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
 
                     if (_webSocketPrivate != null)
                     {
@@ -671,6 +711,11 @@ namespace OsEngine.Market.Servers.Mexc
                     string uri = _wsPrivate + "?listenKey=" + _listenKey;
 
                     _webSocketPrivate = new WebSocket(uri);
+
+                    if (_myProxy != null)
+                    {
+                        _webSocketPrivate.SetProxy(_myProxy);
+                    }
 
                     _webSocketPrivate.EmitOnPing = true;
                     _webSocketPrivate.OnOpen += _webSocketPrivate_OnOpen;
@@ -871,7 +916,7 @@ namespace OsEngine.Market.Servers.Mexc
                     return;
                 }
 
-                if (_FIFOListWebSocketPublicMessage == null)
+                if (_fIFOListWebSocketPublicMessage == null)
                 {
                     return;
                 }
@@ -890,7 +935,7 @@ namespace OsEngine.Market.Servers.Mexc
                         return;
                     }
 
-                    _FIFOListWebSocketPublicMessage.Enqueue(response.ToString());
+                    _fIFOListWebSocketPublicMessage.Enqueue(response.ToString());
                 }
                 else if (e.IsText)
                 {
@@ -905,7 +950,7 @@ namespace OsEngine.Market.Servers.Mexc
                         return;
                     }
 
-                    _FIFOListWebSocketPublicMessage.Enqueue(e.Data);
+                    _fIFOListWebSocketPublicMessage.Enqueue(e.Data);
                 }
             }
             catch (Exception error)
@@ -993,7 +1038,7 @@ namespace OsEngine.Market.Servers.Mexc
                     return;
                 }
 
-                if (_FIFOListWebSocketPrivateMessage == null)
+                if (_fIFOListWebSocketPrivateMessage == null)
                 {
                     return;
                 }
@@ -1012,7 +1057,7 @@ namespace OsEngine.Market.Servers.Mexc
                         return;
                     }
 
-                    _FIFOListWebSocketPrivateMessage.Enqueue(response.ToString());
+                    _fIFOListWebSocketPrivateMessage.Enqueue(response.ToString());
                 }
                 else if (e.IsText)
                 {
@@ -1026,7 +1071,7 @@ namespace OsEngine.Market.Servers.Mexc
                         return;
                     }
 
-                    _FIFOListWebSocketPrivateMessage.Enqueue(e.Data);
+                    _fIFOListWebSocketPrivateMessage.Enqueue(e.Data);
                 }
             }
             catch (Exception error)
@@ -1086,6 +1131,11 @@ namespace OsEngine.Market.Servers.Mexc
 
                 try
                 {
+                    if (IsCompletelyDeleted == true)
+                    {
+                        return;
+                    }
+
                     if (ServerStatus != ServerConnectStatus.Connect)
                     {
                         continue;
@@ -1140,9 +1190,11 @@ namespace OsEngine.Market.Servers.Mexc
 
         #region 9 WebSocket Security subscribe
 
-        private RateGate _rateGateSubscribe = new RateGate(30, TimeSpan.FromMilliseconds(1000));
+        private RateGate _rateGateSubscribe = new RateGate(1, TimeSpan.FromMilliseconds(35));
 
         private List<string> _subscribedSecurities = new List<string>();
+
+        List<string> _activeSecurities = new List<string>();
 
         public void Subscribe(Security security)
         {
@@ -1275,7 +1327,7 @@ namespace OsEngine.Market.Servers.Mexc
                                 {
                                     string securityName = _subscribedSecurities[j];
 
-                                    _webSocketPublic.SendAsync($"{{ \"method\": \"UNSUBSCRIPTION\", \"params\": [\"spot@public.deals.v3.api.pb@{securityName}\"] }}");
+                                    _webSocketPublic.SendAsync($"{{ \"method\": \"UNSUBSCRIPTION\", \"params\": [\"spot@public.aggre.deals.v3.api.pb@100ms@{securityName}\"] }}");
                                     _webSocketPublic.SendAsync($"{{ \"method\": \"UNSUBSCRIPTION\", \"params\": [\"spot@public.limit.depth.v3.api.pb@{securityName}@20\"] }}");
                                 }
                             }
@@ -1312,50 +1364,91 @@ namespace OsEngine.Market.Servers.Mexc
 
         #region 10 WebSocket parsing the messages
 
-        private ConcurrentQueue<string> _FIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
+        private ConcurrentQueue<string> _fIFOListWebSocketPublicMessage = new ConcurrentQueue<string>();
 
-        private ConcurrentQueue<string> _FIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+        private ConcurrentQueue<string> _fIFOListWebSocketPrivateMessage = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageMarketDepth = new ConcurrentQueue<string>();
+
+        private ConcurrentQueue<string> _queueMessageTrades = new ConcurrentQueue<string>();
 
         private void MessageReaderPublic()
         {
-            Thread.Sleep(1000);
-
             while (true)
             {
                 try
                 {
-                    if (_FIFOListWebSocketPublicMessage.IsEmpty)
+                    if (_fIFOListWebSocketPublicMessage.IsEmpty)
                     {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
                         Thread.Sleep(1);
-                        continue;
-                    }
-
-                    string message;
-
-                    _FIFOListWebSocketPublicMessage.TryDequeue(out message);
-
-                    if (message == null)
-                    {
-                        continue;
-                    }
-
-                    if (message.Contains(".depth."))
-                    {
-                        UpdateMarketDepth(message);
-                    }
-                    else if (message.Contains(".deals."))
-                    {
-                        UpdateTrade(message);
                     }
                     else
                     {
-                        SendLogMessage("Unknown message: " + message, LogMessageType.Error);
+                        string message;
+
+                        _fIFOListWebSocketPublicMessage.TryDequeue(out message);
+
+                        if (message == null)
+                        {
+                            continue;
+                        }
+
+                        if (message.Contains(".depth."))
+                        {
+                            _queueMessageMarketDepth.Enqueue(message);
+                        }
+                        else if (message.Contains(".deals."))
+                        {
+                            _queueMessageTrades.Enqueue(message);
+                        }
+                        else
+                        {
+                            SendLogMessage("Unknown message: " + message, LogMessageType.Error);
+                        }
                     }
                 }
                 catch (Exception exception)
                 {
                     SendLogMessage(exception.ToString(), LogMessageType.Error);
                     Thread.Sleep(2000);
+                }
+            }
+        }
+
+        private void ThreadMessageReaderTrades()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageTrades.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageTrades.TryDequeue(out message))
+                        {
+                            UpdateTrade(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
                 }
             }
         }
@@ -1399,6 +1492,39 @@ namespace OsEngine.Market.Servers.Mexc
             catch (Exception ex)
             {
                 SendLogMessage($"{ex.Message} {ex.StackTrace}", LogMessageType.Error);
+            }
+        }
+
+        private void ThreadMessageReaderMarketDepth()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (_queueMessageMarketDepth.IsEmpty)
+                    {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
+                        Thread.Sleep(1);
+                    }
+                    else
+                    {
+                        string message;
+
+                        if (_queueMessageMarketDepth.TryDequeue(out message))
+                        {
+                            UpdateMarketDepth(message);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    SendLogMessage(ex.Message, LogMessageType.Error);
+                }
             }
         }
 
@@ -1453,7 +1579,7 @@ namespace OsEngine.Market.Servers.Mexc
                 else
                 {
                     SendLogMessage($"{ex.Message} {ex.StackTrace}", LogMessageType.Error);
-                }   
+                }
             }
         }
 
@@ -1461,47 +1587,51 @@ namespace OsEngine.Market.Servers.Mexc
 
         private void MessageReaderPrivate()
         {
-            Thread.Sleep(1000);
-
             while (true)
             {
                 try
                 {
-                    if (_FIFOListWebSocketPrivateMessage.IsEmpty)
+                    if (_fIFOListWebSocketPrivateMessage.IsEmpty)
                     {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
                         Thread.Sleep(1);
-                        continue;
-                    }
-
-                    string message;
-
-                    _FIFOListWebSocketPrivateMessage.TryDequeue(out message);
-
-                    if (message == null)
-                    {
-                        continue;
-                    }
-
-                    if (message.Contains("\"msg\""))
-                    {
-                        continue;
-                    }
-
-                    if (message.Contains(".account."))
-                    {
-                        UpdateMyPortfolio(message);
-                    }
-                    else if (message.Contains(".orders."))
-                    {
-                        UpdateMyOrder(message);
-                    }
-                    else if (message.Contains(".deals."))
-                    {
-                        UpdateMyTrade(message);
                     }
                     else
                     {
-                        SendLogMessage("Unknown message: " + message, LogMessageType.Error);
+                        string message;
+
+                        _fIFOListWebSocketPrivateMessage.TryDequeue(out message);
+
+                        if (message == null)
+                        {
+                            continue;
+                        }
+
+                        if (message.Contains("\"msg\""))
+                        {
+                            continue;
+                        }
+
+                        if (message.Contains(".account."))
+                        {
+                            UpdateMyPortfolio(message);
+                        }
+                        else if (message.Contains(".orders."))
+                        {
+                            UpdateMyOrder(message);
+                        }
+                        else if (message.Contains(".deals."))
+                        {
+                            UpdateMyTrade(message);
+                        }
+                        else
+                        {
+                            SendLogMessage("Unknown message: " + message, LogMessageType.Error);
+                        }
                     }
                 }
                 catch (Exception exception)
@@ -1541,7 +1671,7 @@ namespace OsEngine.Market.Servers.Mexc
 
                 myTrade.Volume = item.quantity.ToDecimal();
 
-                MyTradeEvent(myTrade);
+                MyTradeEvent?.Invoke(myTrade);
             }
             catch (Exception ex)
             {
@@ -1972,9 +2102,9 @@ namespace OsEngine.Market.Servers.Mexc
 
         private Order GetOrderFromExchange(string userOrderId, string symbol)
         {
-            if (string.IsNullOrEmpty(userOrderId))
+            if (string.IsNullOrEmpty(userOrderId)
+                || userOrderId == "0")
             {
-                SendLogMessage("Order ID is empty", LogMessageType.Connect);
                 return null;
             }
 
@@ -2261,7 +2391,15 @@ namespace OsEngine.Market.Servers.Mexc
 
                 RestRequest request = new RestRequest(url, method);
                 request.AddHeader("X-MEXC-APIKEY", _publicKey);
-                IRestResponse response = new RestClient(_baseUrl).Execute(request);
+
+                RestClient client = new RestClient(_baseUrl);
+
+                if (_myProxy != null)
+                {
+                    client.Proxy = _myProxy;
+                }
+
+                IRestResponse response = client.Execute(request);
 
                 return response;
             }
@@ -2319,6 +2457,8 @@ namespace OsEngine.Market.Servers.Mexc
                 return BitConverter.ToString(hash).Replace("-", "").ToLower();
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

@@ -140,6 +140,12 @@ namespace OsEngine.Market.Servers
                         return;
                     }
 
+                    if(_server.IsDeleted == true)
+                    {
+                        _server = null;
+                        return;
+                    }
+
                     // 1 проверяем не надо ли запросить список активных ордеров после переподключения
                     
                     if(_canQueryOrdersAfterReconnect)
@@ -244,6 +250,12 @@ namespace OsEngine.Market.Servers
         private bool _checkOrdersAfterLastConnect = false;
 
         public event Action GetAllActiveOrdersOnReconnectEvent;
+
+        public void ForceCheckOrdersAfterReconnect()
+        {
+            _lastDisconnectTime = DateTime.Now;
+            _checkOrdersAfterLastConnect = false;
+        }
 
         #endregion
 
@@ -612,9 +624,9 @@ namespace OsEngine.Market.Servers
                     }
                 });
             }
-            catch (Exception e)
+            catch //(Exception e)
             {
-                SendLogMessage(e.ToString(), LogMessageType.Error);
+                //SendLogMessage(e.ToString(), LogMessageType.Error);
             }
         }
 

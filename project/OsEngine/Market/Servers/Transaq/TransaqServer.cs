@@ -7,6 +7,7 @@ using OsEngine.Entity;
 using OsEngine.Language;
 using OsEngine.Logging;
 using OsEngine.Market.Servers.Entity;
+using OsEngine.Market.Servers.Pionex.Entity;
 using OsEngine.Market.Servers.Transaq.TransaqEntity;
 using RestSharp;
 using RestSharp.Deserializers;
@@ -35,19 +36,21 @@ namespace OsEngine.Market.Servers.Transaq
         {
             ServerRealization = new TransaqServerRealization();
 
-            CreateParameterString(OsLocalization.Market.Message63, "");
-            CreateParameterPassword(OsLocalization.Market.Message64, "");
-            CreateParameterString(OsLocalization.Market.Label41, "tr1.finam.ru");
-            CreateParameterString(OsLocalization.Market.Message90, "3900");
-            CreateParameterString(OsLocalization.Market.Message100, "6:50/23:50");
-            CreateParameterBoolean(OsLocalization.Market.UseMoexStock, true);
-            CreateParameterBoolean(OsLocalization.Market.UseFunds, false);
-            CreateParameterBoolean(OsLocalization.Market.UseOtcStock, false);
-            CreateParameterBoolean(OsLocalization.Market.UseFutures, true);
-            CreateParameterBoolean(OsLocalization.Market.UseCurrency, false);
-            CreateParameterBoolean(OsLocalization.Market.UseOptions, false);
-            CreateParameterBoolean(OsLocalization.Market.UseOther, false);
-            CreateParameterButton(OsLocalization.Market.ButtonNameChangePassword);
+            CreateParameterString(OsLocalization.Market.Message63, ""); // 0
+            CreateParameterPassword(OsLocalization.Market.Message64, ""); // 1
+            CreateParameterString(OsLocalization.Market.Label41, "tr1.finam.ru"); // 2
+            CreateParameterString(OsLocalization.Market.Message90, "3900"); // 3
+            CreateParameterString(OsLocalization.Market.Message100, "6:50/23:50"); // 4
+            CreateParameterBoolean(OsLocalization.Market.UseMoexStock, true); // 5 
+            CreateParameterBoolean(OsLocalization.Market.UseFunds, false); // 6 
+            CreateParameterBoolean(OsLocalization.Market.UseOtcStock, false); // 7
+            CreateParameterBoolean(OsLocalization.Market.UseFutures, true); // 8
+            CreateParameterBoolean(OsLocalization.Market.UseCurrency, false); // 9
+            CreateParameterBoolean(OsLocalization.Market.UseOptions, false); // 10
+            CreateParameterBoolean(OsLocalization.Market.UseOther, false); // 11
+            CreateParameterBoolean(OsLocalization.Market.FullLogConnector, false); // 12
+            CreateParameterButton(OsLocalization.Market.ButtonNameChangePassword); // 13
+            CreateParameterBoolean(OsLocalization.Market.ReconnectingAfterNoneOrder, true); // 14
 
             ServerParameters[4].Comment = OsLocalization.Market.Label160;
             ServerParameters[5].Comment = OsLocalization.Market.Label193;
@@ -57,7 +60,9 @@ namespace OsEngine.Market.Servers.Transaq
             ServerParameters[9].Comment = OsLocalization.Market.Label107;
             ServerParameters[10].Comment = OsLocalization.Market.Label107;
             ServerParameters[11].Comment = OsLocalization.Market.Label107;
-            ServerParameters[12].Comment = OsLocalization.Market.Label105;
+            ServerParameters[12].Comment = OsLocalization.Market.Label309;
+            ServerParameters[13].Comment = OsLocalization.Market.Label105;
+            ServerParameters[14].Comment = OsLocalization.Market.Label315;
         }
     }
 
@@ -113,8 +118,6 @@ namespace OsEngine.Market.Servers.Transaq
             Thread worker8 = new Thread(ThreadSecurityInfoParsingWorkPlace);
             worker8.Name = "TransaqThreadUpdateSecurityInfo";
             worker8.Start();
-
-
         }
 
         public ServerType ServerType
@@ -154,7 +157,10 @@ namespace OsEngine.Market.Servers.Transaq
             _useCurrency = ((ServerParameterBool)ServerParameters[9]).Value;
             _useOptions = ((ServerParameterBool)ServerParameters[10]).Value;
             _useOther = ((ServerParameterBool)ServerParameters[11]).Value;
-            ServerParameterButton btn = ((ServerParameterButton)ServerParameters[12]);
+            _fullLog = ((ServerParameterBool)ServerParameters[12]).Value;
+            ServerParameterButton btn = ((ServerParameterButton)ServerParameters[13]);
+            _reconectingAfterNone = ((ServerParameterBool)ServerParameters[14]).Value;
+            _fullMarketDepthIsOn = ((ServerParameterBool)ServerParameters[22]).Value;
 
             btn.UserClickButton += () => { ButtonClickChangePasswordWindowShow(); };
 
@@ -381,6 +387,10 @@ namespace OsEngine.Market.Servers.Transaq
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -398,6 +408,12 @@ namespace OsEngine.Market.Servers.Transaq
         private bool _useCurrency = false;
 
         private bool _useOther = false;
+
+        private bool _fullLog;
+
+        private bool _fullMarketDepthIsOn;
+
+        private bool _reconectingAfterNone = false;
 
         #endregion
 
@@ -1184,7 +1200,7 @@ namespace OsEngine.Market.Servers.Transaq
 
             XmlNode currencyPortfolio = root.SelectSingleNode("portfolio_currency");
 
-            if(currencyPortfolio != null)
+            if (currencyPortfolio != null)
             {
                 XmlNode balance = currencyPortfolio.SelectSingleNode("cover");
                 string cr = currencyPortfolio.Attributes[0].Value;
@@ -1789,11 +1805,9 @@ namespace OsEngine.Market.Servers.Transaq
                 board = "FUT";
             }
 
-            bool fullMarketDepthIsOn = ((ServerParameterBool)ServerParameters[20]).Value;
-
             string cmd = "";
 
-            if (fullMarketDepthIsOn == true)
+            if (_fullMarketDepthIsOn == true)
             {
                 cmd = "<command id=\"subscribe\">";
                 cmd += "<alltrades>";
@@ -1810,7 +1824,7 @@ namespace OsEngine.Market.Servers.Transaq
                 cmd += "</quotes>";
                 cmd += "</command>";
             }
-            else if (fullMarketDepthIsOn == false)
+            else if (_fullMarketDepthIsOn == false)
             {
                 cmd = "<command id=\"subscribe\">";
                 cmd += "<alltrades>";
@@ -2070,6 +2084,7 @@ namespace OsEngine.Market.Servers.Transaq
                 else
                 {
                     order.NumberUser = result.TransactionId;
+                    order.NumberMarket = null;
                     order.Price = newPrice;
                 }
 
@@ -2211,7 +2226,6 @@ namespace OsEngine.Market.Servers.Transaq
                             {
                                 _transaqSecuritiesInString.Enqueue(data);
                                 _lastUpdateSecurityArrayTime = DateTime.Now;
-
                             }
                             else if (data.StartsWith("<clientlimits"))
                             {
@@ -2271,7 +2285,7 @@ namespace OsEngine.Market.Servers.Transaq
                             }
                             else if (data.StartsWith("<error>"))
                             {
-                                SendLogMessage(data, LogMessageType.Error);
+                                SendLogMessage($"Transaq. Пришла ошибка с сервера: {data}", LogMessageType.Error);
                             }
                             else if (data.StartsWith("<news_header>"))
                             {
@@ -2296,9 +2310,16 @@ namespace OsEngine.Market.Servers.Transaq
                             {
                                 // do nothin
                             }
+                            else if (data.Contains("OsEngineTransaqReconnect"))
+                            {
+                                if (ServerStatus == ServerConnectStatus.Connect)
+                                {
+                                    Dispose();
+                                }
+                            }
                             else
                             {
-                                SendLogMessage(data, LogMessageType.Error);
+                                SendLogMessage($"Пришло необработанное сообщение с сервера. Зачастую это просто информационное сообщение и его можно игнорировать: {data}", LogMessageType.System);
                             }
                         }
                     }
@@ -2686,6 +2707,12 @@ namespace OsEngine.Market.Servers.Transaq
                 myTrade.SecurityNameCode = trade.Seccode;
                 myTrade.Side = trade.Buysell == "B" ? Side.Buy : Side.Sell;
 
+                if (_fullLog)
+                {
+                    SendLogMessage($"Пришел трейд: Security {myTrade.SecurityNameCode}, NumberOrder {myTrade.NumberOrderParent}, Side {myTrade.Side}, Price {myTrade.Price} " +
+                        $"Volume {myTrade.Volume}, Time {myTrade.Time}", LogMessageType.System);
+                }
+
                 MyTradeEvent?.Invoke(myTrade);
             }
         }
@@ -2700,7 +2727,40 @@ namespace OsEngine.Market.Servers.Transaq
 
                 if (order.Orderno == "0")
                 {
-                    //continue;
+                    if (order.Status == "cancelled" ||
+                         order.Status == "expired" ||
+                         order.Status == "disabled" ||
+                         order.Status == "removed")
+                    {
+                        Order failOrder = new Order();
+
+                        if (order.Status == "removed"
+                        && string.IsNullOrEmpty(order.Result) == false)
+                        {
+                            SendLogMessage(order.Result, LogMessageType.Error);
+                        }
+
+                        if (_activeOrders.Count > 0)
+                        {
+                            for (int j = 0; j < _activeOrders.Count; j++)
+                            {
+                                if (_activeOrders[j].NumberMarket == failOrder.NumberMarket)
+                                {
+                                    _activeOrders.Remove(_activeOrders[j]);
+                                    break;
+                                }
+                            }
+                        }
+
+                        failOrder.NumberUser = Convert.ToInt32(order.Transactionid);
+                        failOrder.NumberMarket = order.Orderno;
+                        failOrder.TimeCallBack = order.Time != null ? DateTime.Parse(order.Time) : ServerTime;
+                        failOrder.State = OrderStateType.Cancel;
+
+                        MyOrderEvent?.Invoke(failOrder);
+                    }
+
+                    continue;
                 }
 
                 Order newOrder = new Order();
@@ -2708,6 +2768,7 @@ namespace OsEngine.Market.Servers.Transaq
                 newOrder.NumberUser = Convert.ToInt32(order.Transactionid);
                 newOrder.SecurityClassCode = order.Board;
                 newOrder.NumberMarket = order.Orderno;
+
                 newOrder.TimeCallBack = order.Time != null ? DateTime.Parse(order.Time) : ServerTime;
                 newOrder.Side = order.Buysell == "B" ? Side.Buy : Side.Sell;
                 newOrder.Volume = order.Quantity.ToDecimal();
@@ -2747,11 +2808,20 @@ namespace OsEngine.Market.Servers.Transaq
                         SendLogMessage(order.Result, LogMessageType.Error);
                     }
 
-                    newOrder.State = OrderStateType.Active;
-
                     InfoActiveOrder lostActiveOrder = new InfoActiveOrder();
                     lostActiveOrder.Transactionid = newOrder.NumberUser;
                     lostActiveOrder.NumberMarket = newOrder.NumberMarket;
+
+                    if (order.Balance.ToDecimal() > 0 && newOrder.Volume != order.Balance.ToDecimal())
+                    {
+                        newOrder.State = OrderStateType.Partial;
+                        newOrder.VolumeExecute = newOrder.Volume - order.Balance.ToDecimal();
+                    }
+
+                    else
+                    {
+                        newOrder.State = OrderStateType.Active;
+                    }
 
                     _activeOrders.Add(lostActiveOrder);
                 }
@@ -2775,6 +2845,7 @@ namespace OsEngine.Market.Servers.Transaq
                             if (_activeOrders[j].NumberMarket == newOrder.NumberMarket)
                             {
                                 _activeOrders.Remove(_activeOrders[j]);
+                                break;
                             }
                         }
                     }
@@ -2790,6 +2861,7 @@ namespace OsEngine.Market.Servers.Transaq
                             if (_activeOrders[j].NumberMarket == newOrder.NumberMarket)
                             {
                                 _activeOrders.Remove(_activeOrders[j]);
+                                break;
                             }
                         }
                     }
@@ -2811,9 +2883,32 @@ namespace OsEngine.Market.Servers.Transaq
                 {
                     newOrder.State = OrderStateType.Pending;
                 }
+                else if (order.Status == "inactive")
+                {
+                    SendLogMessage($"Пришел ответ от сервера: статус ордера не известен из-за проблем со связью с биржей", LogMessageType.System);
+                    newOrder.State = OrderStateType.None;
+
+                    if (_reconectingAfterNone)
+                    {
+                        _newMessage.Enqueue("OsEngineTransaqReconnect");
+                    }
+                }
                 else
                 {
+                    SendLogMessage($"Пришел необработанный статус ордера: Security {newOrder.SecurityNameCode}, NumberMarket {newOrder.NumberMarket}, NumberUser {newOrder.NumberUser}, Side {newOrder.Side}, Price {newOrder.Price} " +
+                        $"Volume {newOrder.Volume}, VolumeExecute {newOrder.VolumeExecute}, Time {newOrder.TimeCallBack}, Status {newOrder.State}", LogMessageType.System);
                     newOrder.State = OrderStateType.None;
+
+                    if (_reconectingAfterNone)
+                    {
+                        _newMessage.Enqueue("OsEngineTransaqReconnect");
+                    }
+                }
+
+                if (_fullLog)
+                {
+                    SendLogMessage($"Пришел ордер: Security {newOrder.SecurityNameCode}, NumberMarket {newOrder.NumberMarket}, NumberUser {newOrder.NumberUser}, Side {newOrder.Side}, Price {newOrder.Price} " +
+                        $"Volume {newOrder.Volume}, VolumeExecute {newOrder.VolumeExecute}, Time {newOrder.TimeCallBack}, Status {newOrder.State}", LogMessageType.System);
                 }
 
                 MyOrderEvent?.Invoke(newOrder);
@@ -3259,6 +3354,8 @@ namespace OsEngine.Market.Servers.Transaq
                 return null;
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

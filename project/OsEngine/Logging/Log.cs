@@ -206,15 +206,19 @@ namespace OsEngine.Logging
                 List<ToolStripMenuItem> items = new List<ToolStripMenuItem>();
 
                 items.Add(new ToolStripMenuItem(OsLocalization.Logging.Label27));
-                items[0].Click += Log_MessageServer_Click;
+                items[^1].Click += Log_MessageServer_Click;
 
                 items.Add(new ToolStripMenuItem(OsLocalization.Logging.Label28));
-                items[1].Click += Log_ShowFile_Click;
+                items[^1].Click += Log_ShowFile_Click;
 
                 items.Add(new ToolStripMenuItem(OsLocalization.Logging.Label29));
-                items[2].Click += Log_ShowErrorLog_Click;
+                items[^1].Click += Log_ShowErrorLog_Click;
 
-                ContextMenuStrip menu = new ContextMenuStrip(); menu.Items.AddRange(items.ToArray());
+                items.Add(new ToolStripMenuItem(OsLocalization.Logging.Label31));
+                items[^1].Click += Log_ClearOldMessages_Click;
+
+                ContextMenuStrip menu = new ContextMenuStrip(); 
+                menu.Items.AddRange(items.ToArray());
 
                 _grid.ContextMenuStrip = menu;
                 _grid.ContextMenuStrip.Show(_grid, new System.Drawing.Point(mouseXPos, mouseYPos));
@@ -227,7 +231,14 @@ namespace OsEngine.Logging
 
         private void Log_ShowErrorLog_Click(object sender, EventArgs e)
         {
-            Log.ShowErrorLogUi();
+            try
+            {
+                Log.ShowErrorLogUi();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
         }
 
         private void Log_ShowFile_Click(object sender, EventArgs e)
@@ -248,15 +259,43 @@ namespace OsEngine.Logging
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show(ex.ToString());
+                MessageBox.Show(ex.ToString());
             }
         }
 
         private void Log_MessageServer_Click(object sender, EventArgs e)
         {
-            if (_messageSender != null)
+            try
             {
-                _messageSender.ShowDialog();
+                if (_messageSender != null)
+                {
+                    _messageSender.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+        }
+
+        private void Log_ClearOldMessages_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                AcceptDialogUi ui = new AcceptDialogUi(OsLocalization.Market.Label314);
+
+                ui.ShowDialog();
+
+                if (ui.UserAcceptAction == false)
+                {
+                    return;
+                }
+
+                this.Clear();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
             }
         }
 
@@ -607,6 +646,8 @@ namespace OsEngine.Logging
 
         private ConcurrentQueue<LogMessage> _incomingMessages = new ConcurrentQueue<LogMessage>();
 
+        public List<LogMessage> LastErrorMessages = new List<LogMessage>();
+
         /// <summary>
         /// incoming message
         /// входящее сообщение
@@ -646,6 +687,13 @@ namespace OsEngine.Logging
             {
                 LogMessage messageLog = new LogMessage { Message = message, Time = DateTime.Now, Type = type };
                 SetNewErrorMessage(messageLog);
+
+                LastErrorMessages.Add(messageLog);
+
+                while (LastErrorMessages.Count > 20)
+                {
+                    LastErrorMessages.RemoveAt(0);
+                }
             }
         }
 
@@ -1017,53 +1065,60 @@ namespace OsEngine.Logging
         /// </summary>
         private static void SetNewErrorMessage(LogMessage message)
         {
-            if (!MainWindow.GetDispatcher.CheckAccess())
+            try
             {
-                MainWindow.GetDispatcher.Invoke(new Action<LogMessage>(SetNewErrorMessage), message);
-                return;
+                if (!MainWindow.GetDispatcher.CheckAccess())
+                {
+                    MainWindow.GetDispatcher.Invoke(new Action<LogMessage>(SetNewErrorMessage), message);
+                    return;
+                }
+
+                if (_gridErrorLog.Rows.Count == 500)
+                {
+                    DataGridViewRow row1 = new DataGridViewRow();
+                    row1.Cells.Add(new DataGridViewTextBoxCell());
+                    row1.Cells[0].Value = DateTime.Now.ToString(OsLocalization.CurCulture);
+
+                    row1.Cells.Add(new DataGridViewTextBoxCell());
+                    row1.Cells[1].Value = LogMessageType.Error;
+
+                    row1.Cells.Add(new DataGridViewTextBoxCell());
+                    row1.Cells[2].Value = "To much ERRORS. Error log shut down.";
+                    _gridErrorLog.Rows.Insert(0, row1);
+                    _errorLogShutDown = true;
+                    return;
+                }
+                else if (_gridErrorLog.Rows.Count > 500)
+                {
+                    _errorLogShutDown = true;
+                    return;
+                }
+
+                DataGridViewRow row = new DataGridViewRow();
+                row.Cells.Add(new DataGridViewTextBoxCell());
+                row.Cells[0].Value = DateTime.Now.ToString(OsLocalization.CurCulture);
+
+                row.Cells.Add(new DataGridViewTextBoxCell());
+                row.Cells[1].Value = LogMessageType.Error;
+
+                row.Cells.Add(new DataGridViewTextBoxCell());
+                row.Cells[2].Value = message.Message;
+                _gridErrorLog.Rows.Insert(0, row);
+
+                if (PrimeSettingsMaster.ErrorLogMessageBoxIsActive
+                    && _logErrorUi == null)
+                {
+                    ShowErrorLogUi();
+                }
+
+                if (PrimeSettingsMaster.ErrorLogBeepIsActive)
+                {
+                    SystemSounds.Beep.Play();
+                }
             }
-
-            if (_gridErrorLog.Rows.Count == 500)
+            catch
             {
-                DataGridViewRow row1 = new DataGridViewRow();
-                row1.Cells.Add(new DataGridViewTextBoxCell());
-                row1.Cells[0].Value = DateTime.Now.ToString(OsLocalization.CurCulture);
-
-                row1.Cells.Add(new DataGridViewTextBoxCell());
-                row1.Cells[1].Value = LogMessageType.Error;
-
-                row1.Cells.Add(new DataGridViewTextBoxCell());
-                row1.Cells[2].Value = "To much ERRORS. Error log shut down.";
-                _gridErrorLog.Rows.Insert(0, row1);
-                _errorLogShutDown = true;
-                return;
-            }
-            else if (_gridErrorLog.Rows.Count > 500)
-            {
-                _errorLogShutDown = true;
-                return;
-            }
-
-            DataGridViewRow row = new DataGridViewRow();
-            row.Cells.Add(new DataGridViewTextBoxCell());
-            row.Cells[0].Value = DateTime.Now.ToString(OsLocalization.CurCulture);
-
-            row.Cells.Add(new DataGridViewTextBoxCell());
-            row.Cells[1].Value = LogMessageType.Error;
-
-            row.Cells.Add(new DataGridViewTextBoxCell());
-            row.Cells[2].Value = message.Message;
-            _gridErrorLog.Rows.Insert(0, row);
-
-            if (PrimeSettingsMaster.ErrorLogMessageBoxIsActive
-                && _logErrorUi == null)
-            {
-                ShowErrorLogUi();
-            }
-
-            if (PrimeSettingsMaster.ErrorLogBeepIsActive)
-            {
-                SystemSounds.Beep.Play();
+                // ignore
             }
         }
 

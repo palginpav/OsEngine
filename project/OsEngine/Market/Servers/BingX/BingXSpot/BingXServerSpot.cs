@@ -1,4 +1,9 @@
-﻿using Newtonsoft.Json;
+﻿/*
+ * Your rights to use code governed by this license https://github.com/AlexWan/OsEngine/blob/master/LICENSE
+ * Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
+*/
+
+using Newtonsoft.Json;
 using OsEngine.Entity;
 using OsEngine.Entity.WebSocketOsEngine;
 using OsEngine.Language;
@@ -29,6 +34,10 @@ namespace OsEngine.Market.Servers.BinGxSpot
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
             CreateParameterBoolean("Extended Data", false);
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
+            ServerParameters[2].Comment = OsLocalization.Market.Label269;
         }
     }
 
@@ -170,6 +179,10 @@ namespace OsEngine.Market.Servers.BinGxSpot
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1189,8 +1202,8 @@ namespace OsEngine.Market.Servers.BinGxSpot
         {
             try
             {
-                if (_webSocketPublic.Count != 0
-                    && _webSocketPublic != null)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
                     for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
@@ -2271,6 +2284,8 @@ namespace OsEngine.Market.Servers.BinGxSpot
                 }
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

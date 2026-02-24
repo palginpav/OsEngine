@@ -10,6 +10,7 @@ using OsEngine.Alerts;
 using OsEngine.Entity;
 using OsEngine.Journal.Internal;
 using OsEngine.Logging;
+using OsEngine.Market.Servers.GateIo.GateIoFutures.Entities.Response;
 
 namespace OsEngine.Journal
 {
@@ -444,7 +445,7 @@ namespace OsEngine.Journal
             }
         }
 
-        public Order IsMyOrder(Order order)
+        public Order IsMyOrder(Order order, bool canChangeOrderNumber)
         {
             // open positions. Look All
 
@@ -461,20 +462,75 @@ namespace OsEngine.Journal
                         continue;
                     }
 
+                    if (positionCurrent.SecurityName != order.SecurityNameCode)
+                    {
+                        continue;
+                    }
+
                     List<Order> openOrders = positionCurrent.OpenOrders;
 
-                    if (openOrders != null
-                        && openOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser) != null)
+                    for(int j = 0; openOrders != null && j < openOrders.Count; j++)
                     {
-                        return openOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser);
+                        Order openOrder = openOrders[j];
+
+                        if(openOrder == null)
+                        {
+                            continue;
+                        }
+
+                        if(canChangeOrderNumber == false)
+                        {
+                            if (openOrder.NumberUser == order.NumberUser
+                             && string.IsNullOrEmpty(openOrder.NumberMarket))
+                            {
+                                return openOrder;
+                            }
+                            else if (openOrder.NumberUser == order.NumberUser
+                              && openOrder.NumberMarket == order.NumberMarket)
+                            {
+                                return openOrder;
+                            }
+                        }
+                        else
+                        {
+                            if (openOrder.NumberUser == order.NumberUser)
+                            {
+                                return openOrder;
+                            }
+                        }
                     }
 
                     List<Order> closingOrders = positionCurrent.CloseOrders;
 
-                    if (closingOrders != null
-                        && closingOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser) != null)
+                    for (int j = 0; closingOrders != null && j < closingOrders.Count; j++)
                     {
-                        return closingOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser);
+                        Order closeOrder = closingOrders[j];
+
+                        if (closeOrder == null)
+                        {
+                            continue;
+                        }
+
+                        if (canChangeOrderNumber == false)
+                        {
+                            if (closeOrder.NumberUser == order.NumberUser
+                                && string.IsNullOrEmpty(closeOrder.NumberMarket))
+                            {
+                                return closeOrder;
+                            }
+                            else if (closeOrder.NumberUser == order.NumberUser
+                              && closeOrder.NumberMarket == order.NumberMarket)
+                            {
+                                return closeOrder;
+                            }
+                        }
+                        else
+                        {
+                            if (closeOrder.NumberUser == order.NumberUser)
+                            {
+                                return closeOrder;
+                            }
+                        }
                     }
                 }
             }
@@ -497,19 +553,75 @@ namespace OsEngine.Journal
                     continue;
                 }
 
+                if (positionCurrent.SecurityName != order.SecurityNameCode)
+                {
+                    continue;
+                }
+
                 List<Order> openOrders = positionCurrent.OpenOrders;
 
-                if (openOrders != null
-                    && openOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser) != null)
+                for (int j = 0; openOrders != null && j < openOrders.Count; j++)
                 {
-                    return openOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser);
+                    Order openOrder = openOrders[j];
+
+                    if (openOrder == null)
+                    {
+                        continue;
+                    }
+
+                    if (canChangeOrderNumber == false)
+                    {
+                        if (openOrder.NumberUser == order.NumberUser
+                    && string.IsNullOrEmpty(openOrder.NumberMarket))
+                        {
+                            return openOrder;
+                        }
+                        else if (openOrder.NumberUser == order.NumberUser
+                          && openOrder.NumberMarket == order.NumberMarket)
+                        {
+                            return openOrder;
+                        }
+                    }
+                    else
+                    {
+                        if (openOrder.NumberUser == order.NumberUser)
+                        {
+                            return openOrder;
+                        }
+                    }
                 }
+
                 List<Order> closingOrders = positionCurrent.CloseOrders;
 
-                if (closingOrders != null
-                    && closingOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser) != null)
+                for (int j = 0; closingOrders != null && j < closingOrders.Count; j++)
                 {
-                    return closingOrders.Find(order1 => order1 != null && order1.NumberUser == order.NumberUser);
+                    Order closeOrder = closingOrders[j];
+
+                    if (closeOrder == null)
+                    {
+                        continue;
+                    }
+
+                    if (canChangeOrderNumber == false)
+                    {
+                        if (closeOrder.NumberUser == order.NumberUser
+                       && string.IsNullOrEmpty(closeOrder.NumberMarket))
+                        {
+                            return closeOrder;
+                        }
+                        else if (closeOrder.NumberUser == order.NumberUser
+                          && closeOrder.NumberMarket == order.NumberMarket)
+                        {
+                            return closeOrder;
+                        }
+                    }
+                    else
+                    {
+                        if (closeOrder.NumberUser == order.NumberUser)
+                        {
+                            return closeOrder;
+                        }
+                    }
                 }
             }
 
@@ -520,7 +632,7 @@ namespace OsEngine.Journal
 
         #region Incoming data reception
 
-        public void SetNewOrder(Order newOrder)
+        public void SetNewOrder(Order newOrder, bool canChangeOrderNumber)
         {
             try
             {
@@ -528,7 +640,7 @@ namespace OsEngine.Journal
                 {
                     return;
                 }
-                _positionController.SetUpdateOrderInPositions(newOrder);
+                _positionController.SetUpdateOrderInPositions(newOrder, canChangeOrderNumber);
             }
             catch (Exception error)
             {

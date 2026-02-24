@@ -293,7 +293,8 @@ namespace OsEngine.Entity
         {
             try
             {
-                if (series.CandleCreateMethodType != "Simple" ||
+                if ((series.CandleCreateMethodType != "Simple" && series.CandleCreateMethodType != "TimeShiftCandle")
+                    ||
                     series.TimeFrameSpan.TotalMinutes < 1)
                 {
                     List<Trade> allTrades = _server.GetAllTradesToSecurity(series.Security);
@@ -571,6 +572,15 @@ namespace OsEngine.Entity
                 return;
             }
 
+            if (_lastTimeFromServer != DateTime.MinValue
+                && _lastTimeFromServer.Minute == dateTime.Minute
+                && _lastTimeFromServer.Second == dateTime.Second)
+            {
+                return;
+            }
+
+            _lastTimeFromServer = dateTime;
+
             try
             {
                 for (int i = 0; _activeSeriesBasedOnTrades != null && i < _activeSeriesBasedOnTrades.Count; i++)
@@ -599,10 +609,12 @@ namespace OsEngine.Entity
             }
         }
 
+        private DateTime _lastTimeFromServer;
+
         /// <summary>
         /// A new tick appeared in the server. Inbound event
         /// </summary>
-        private void server_NewTradeEvent(List<Trade> trades)
+        private void server_NewTradeEvent(Trade trade)
         {
             try
             {
@@ -619,9 +631,7 @@ namespace OsEngine.Entity
                     return;
                 }
 
-                if (trades == null ||
-                    trades.Count == 0 ||
-                    trades[0] == null)
+                if (trade == null)
                 {
                     return;
                 }
@@ -631,22 +641,24 @@ namespace OsEngine.Entity
                     return;
                 }
 
-                string secCode = trades[0].SecurityNameCode;
+                string secCode = trade.SecurityNameCode;
 
                 try
                 {
                     for (int i = 0; _activeSeriesBasedOnTrades != null &&
                         i < _activeSeriesBasedOnTrades.Count; i++)
                     {
-                        if (_activeSeriesBasedOnTrades[i] == null ||
-                            _activeSeriesBasedOnTrades[i].Security == null ||
-                            _activeSeriesBasedOnTrades[i].TimeFrameBuilder.CandleSeriesRealization == null)
+                        CandleSeries series = _activeSeriesBasedOnTrades[i];
+
+                        if (series == null ||
+                            series.Security == null ||
+                            series.TimeFrameBuilder.CandleSeriesRealization == null)
                         {
                             continue;
                         }
-                        if (_activeSeriesBasedOnTrades[i].Security.Name == secCode)
+                        if (series.Security.Name == secCode)
                         {
-                            _activeSeriesBasedOnTrades[i].SetNewTicks(trades);
+                            series.SetNewTicks(trade);
                         }
                     }
                 }
@@ -691,15 +703,17 @@ namespace OsEngine.Entity
 
                 for (int i = 0; i < _activeSeriesBasedOnMd.Count; i++)
                 {
-                    if (_activeSeriesBasedOnMd[i] == null ||
-                        _activeSeriesBasedOnMd[i].Security == null)
+                    CandleSeries series = _activeSeriesBasedOnMd[i];
+
+                    if (series == null ||
+                        series.Security == null)
                     {
                         continue;
                     }
 
-                    if (_activeSeriesBasedOnMd[i].Security.Name == marketDepth.SecurityNameCode)
+                    if (series.Security.Name == marketDepth.SecurityNameCode)
                     {
-                        _activeSeriesBasedOnMd[i].SetNewMarketDepth(marketDepth);
+                        series.SetNewMarketDepth(marketDepth);
                     }
                 }
             }
@@ -797,6 +811,10 @@ namespace OsEngine.Entity
                 {
                     for (int i = 0; i < _activeSeriesBasedOnTrades.Count; i++)
                     {
+                        if (_activeSeriesBasedOnTrades[i] == null)
+                        {
+                            continue;
+                        }
                         _activeSeriesBasedOnTrades[i].Clear();
                     }
                 }
@@ -849,6 +867,11 @@ namespace OsEngine.Entity
 
             for (int i = 0; _activeSeriesBasedOnTrades != null && i < _activeSeriesBasedOnTrades.Count; i++)
             {
+                if (_activeSeriesBasedOnTrades[i] == null)
+                {
+                    continue;
+                }
+
                 if (nameSecurities.Find(nameSec => nameSec == _activeSeriesBasedOnTrades[i].Security.Name) != null)
                 {
                     mySeries.Add(_activeSeriesBasedOnTrades[i]);

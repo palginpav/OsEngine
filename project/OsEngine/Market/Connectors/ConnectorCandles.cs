@@ -384,6 +384,65 @@ namespace OsEngine.Market.Connectors
         }
 
         /// <summary>
+        /// connector is can to change order number
+        /// </summary>
+        public bool IsCanChangeOrderNumberMarket
+        {
+            get
+            {
+                if (ServerType == ServerType.Tester ||
+                     ServerType == ServerType.Optimizer)
+                {
+                    return false;
+                }
+
+                if (ServerType == ServerType.None)
+                {
+                    return false;
+                }
+
+                IServerPermission serverPermission = ServerMaster.GetServerPermission(ServerType);
+
+                if (serverPermission == null)
+                {
+                    return false;
+                }
+
+                return serverPermission.CanChangeOrderMarketNumber;
+            }
+        }
+
+        public bool IsNonTradePeriodInConnector
+        {
+            get
+            {
+                if (_myServer == null)
+                {
+                    return false;
+                }
+
+                if (_myServer.ServerStatus != ServerConnectStatus.Connect)
+                {
+                    return false;
+                }
+
+                if (StartProgram != StartProgram.IsOsTrader)
+                { // в тестере и оптимизаторе дальше не проверяем
+                    return false;
+                }
+
+                if (_myServer.GetType().BaseType == typeof(AServer))
+                {
+                    AServer aServer = (AServer)_myServer;
+
+                    return aServer.IsNonTradePeriod;
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>
         /// connector's portfolio number
         /// </summary>
         public string PortfolioName;
@@ -489,14 +548,14 @@ namespace OsEngine.Market.Connectors
                     return false;
                 }
 
-                IServerPermission serverPermision = ServerMaster.GetServerPermission(ServerType);
+                IServerPermission serverPermission = ServerMaster.GetServerPermission(ServerType);
 
-                if (serverPermision == null)
+                if (serverPermission == null)
                 {
                     return false;
                 }
 
-                return serverPermision.MarketOrdersIsSupport;
+                return serverPermission.MarketOrdersIsSupport;
             }
         }
 
@@ -645,6 +704,30 @@ namespace OsEngine.Market.Connectors
             get { return TimeFrameBuilder.CandleMarketDataType; }
         }
 
+        public bool MarketDepthBuildMaxSpreadIsOn
+        {
+            set
+            {
+                TimeFrameBuilder.MarketDepthBuildMaxSpreadIsOn = value;
+            }
+            get
+            {
+                return TimeFrameBuilder.MarketDepthBuildMaxSpreadIsOn;
+            }
+        }
+
+        public decimal MarketDepthBuildMaxSpread
+        {
+            set
+            {
+                TimeFrameBuilder.MarketDepthBuildMaxSpread = value;
+            }
+            get
+            {
+                return TimeFrameBuilder.MarketDepthBuildMaxSpread;
+            }
+        }
+
         /// <summary>
         /// method of creating candles: Simple / Volume / Range / etc
         /// </summary>
@@ -677,7 +760,8 @@ namespace OsEngine.Market.Connectors
                         TimeFrameBuilder.TimeFrameTimeSpan.TotalSeconds == 0))
                     {
                         TimeFrameBuilder.TimeFrame = value;
-                        Reconnect();
+
+                        Reconnect();                      
                     }
                 }
                 catch (Exception error)
@@ -723,12 +807,13 @@ namespace OsEngine.Market.Connectors
         private void Reconnect()
         {
             try
-            {
+            {           
                 lock (_reconnectLocker)
                 {
                     if (_lastReconnectTime.AddSeconds(1) > DateTime.Now)
                     {
-                        if (ConnectorStartedReconnectEvent != null)
+                        if (StartProgram != StartProgram.IsOsOptimizer
+                            && ConnectorStartedReconnectEvent != null)
                         {
                             ConnectorStartedReconnectEvent(SecurityName, TimeFrame, TimeFrameTimeSpan, PortfolioName, ServerFullName);
                         }
@@ -736,7 +821,6 @@ namespace OsEngine.Market.Connectors
                     }
                     _lastReconnectTime = DateTime.Now;
                 }
-
 
                 if (_mySeries != null)
                 {
@@ -753,6 +837,9 @@ namespace OsEngine.Market.Connectors
                 }
 
                 Save();
+
+                _bestAsk = 0;
+                _bestBid = 0;
 
                 if (ConnectorStartedReconnectEvent != null)
                 {
@@ -824,6 +911,8 @@ namespace OsEngine.Market.Connectors
 
         private static string _tasksCountLocker = "_tasksCountOnLocker";
 
+        private bool _isFirstTimeSubscribeInOptimizer = true;
+
         private async void Subscribe()
         {
             try
@@ -834,7 +923,14 @@ namespace OsEngine.Market.Connectors
                 {
                     if (ServerType == ServerType.Optimizer)
                     {
-                        await Task.Delay(1);
+                        if(_isFirstTimeSubscribeInOptimizer)
+                        {
+                            _isFirstTimeSubscribeInOptimizer = false;
+                        }
+                        else
+                        {
+                            await Task.Delay(1);
+                        } 
                     }
                     else if (ServerType == ServerType.Tester)
                     {
@@ -881,7 +977,8 @@ namespace OsEngine.Market.Connectors
 
                     List<IServer> servers = ServerMaster.GetServers();
 
-                    if (servers == null)
+                    if (servers == null
+                        && ServerType != ServerType.Optimizer)
                     {
                         if (ServerType != ServerType.None)
                         {
@@ -895,7 +992,7 @@ namespace OsEngine.Market.Connectors
                         if (ServerType == ServerType.Optimizer &&
                             this.ServerUid != 0)
                         {
-                            for (int i = 0; i < servers.Count; i++)
+                            for (int i = 0; servers != null && i < servers.Count; i++)
                             {
                                 if (servers[i] == null)
                                 {
@@ -909,12 +1006,11 @@ namespace OsEngine.Market.Connectors
                                     _myServer = servers[i];
                                     break;
                                 }
-
                             }
                         }
                         else
                         {
-                            for (int i = 0; i < servers.Count; i++)
+                            for (int i = 0; servers != null && i < servers.Count; i++)
                             {
                                 if (servers[i].ServerType == ServerType)
                                 {
@@ -942,7 +1038,8 @@ namespace OsEngine.Market.Connectors
 
                     if (_myServer == null)
                     {
-                        if (ServerType != ServerType.None)
+                        if (ServerType != ServerType.None
+                            && ServerType != ServerType.Optimizer)
                         {
                             ServerMaster.SetServerToAutoConnection(ServerType,ServerFullName);
                         }
@@ -1004,6 +1101,10 @@ namespace OsEngine.Market.Connectors
 
                                 await Task.Delay(millisecondsToDelay);
                             }
+                            else if(ServerType == ServerType.Optimizer)
+                            {
+                                // no delay
+                            }
                             else
                             {
                                 await Task.Delay(1);
@@ -1032,21 +1133,25 @@ namespace OsEngine.Market.Connectors
                                 _tasksCountOnSubscribe--;
                             }
 
-                            OptimizerServer myOptimizerServer = _myServer as OptimizerServer;
-                            if (_mySeries == null &&
-                                myOptimizerServer != null &&
-                                myOptimizerServer.ServerType == ServerType.Optimizer &&
-                                myOptimizerServer.NumberServer != ServerUid)
+                            if (ServerType == ServerType.Optimizer)
                             {
-                                for (int i = 0; i < servers.Count; i++)
+                                OptimizerServer myOptimizerServer = _myServer as OptimizerServer;
+
+                                if (_mySeries == null &&
+                                    myOptimizerServer != null &&
+                                    myOptimizerServer.ServerType == ServerType.Optimizer &&
+                                    myOptimizerServer.NumberServer != ServerUid)
                                 {
-                                    if (servers[i].ServerType == ServerType.Optimizer &&
-                                        ((OptimizerServer)servers[i]).NumberServer == this.ServerUid)
+                                    for (int i = 0; i < servers.Count; i++)
                                     {
-                                        UnSubscribeOnServer(_myServer);
-                                        _myServer = servers[i];
-                                        SubscribeOnServer(_myServer);
-                                        break;
+                                        if (servers[i].ServerType == ServerType.Optimizer &&
+                                            ((OptimizerServer)servers[i]).NumberServer == this.ServerUid)
+                                        {
+                                            UnSubscribeOnServer(_myServer);
+                                            _myServer = servers[i];
+                                            SubscribeOnServer(_myServer);
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1332,8 +1437,7 @@ namespace OsEngine.Market.Connectors
         {
             try
             {
-                if (security == null ||
-                    security.Name != _securityName)
+                if (security.Name != _securityName)
                 {
                     return;
                 }
@@ -1373,39 +1477,34 @@ namespace OsEngine.Market.Connectors
         /// <summary>
         /// incoming depth
         /// </summary>
-        private void ConnectorBot_NewMarketDepthEvent(MarketDepth glass)
+        private void ConnectorBot_NewMarketDepthEvent(MarketDepth marketDepth)
         {
             try
             {
-                if (_securityName == null)
-                {
-                    return;
-                }
-
-                if (_securityName != glass.SecurityNameCode)
+                if (_securityName != marketDepth.SecurityNameCode)
                 {
                     return;
                 }
 
                 if (GlassChangeEvent != null && EventsIsOn == true)
                 {
-                    GlassChangeEvent(glass);
+                    GlassChangeEvent(marketDepth);
                 }
 
                 decimal bestBid = 0;
 
-                if (glass.Bids != null &&
-                     glass.Bids.Count > 0)
+                if (marketDepth.Bids != null &&
+                     marketDepth.Bids.Count > 0)
                 {
-                    bestBid = glass.Bids[0].Price.ToDecimal();
+                    bestBid = marketDepth.Bids[0].Price.ToDecimal();
                 }
 
                 decimal bestAsk = 0;
 
-                if (glass.Asks != null &&
-                    glass.Asks.Count > 0)
+                if (marketDepth.Asks != null &&
+                    marketDepth.Asks.Count > 0)
                 {
-                    bestAsk = glass.Asks[0].Price.ToDecimal();
+                    bestAsk = marketDepth.Asks[0].Price.ToDecimal();
                 }
 
                 if (EmulatorIsOn)
@@ -1434,31 +1533,10 @@ namespace OsEngine.Market.Connectors
         /// <summary>
         /// incoming trades
         /// </summary>
-        private void ConnectorBot_NewTradeEvent(List<Trade> tradesList)
+        private void ConnectorBot_NewTradeEvent(Trade trade)
         {
-            try
+            if (trade.SecurityNameCode != _securityName)
             {
-                if (_securityName == null
-                    || tradesList == null
-                    || tradesList.Count == 0)
-                {
-                    return;
-                }
-                else
-                {
-                    int count = tradesList.Count - 1;
-
-                    if (tradesList[count] == null ||
-                        tradesList[count].SecurityNameCode != _securityName)
-                    {
-                        return;
-                    }
-                }
-            }
-            catch
-            {
-                // it's hard to catch the error here. Who will understand what is wrong - well done 
-                // ошибка здесь трудноуловимая. Кто понял что не так - молодец
                 return;
             }
 
@@ -1466,7 +1544,7 @@ namespace OsEngine.Market.Connectors
             {
                 if (TickChangeEvent != null && EventsIsOn == true)
                 {
-                    TickChangeEvent(tradesList);
+                    TickChangeEvent(trade);
                 }
             }
             catch (Exception error)
@@ -1475,6 +1553,8 @@ namespace OsEngine.Market.Connectors
             }
         }
 
+        DateTime _lastTimeFromServer;
+
         /// <summary>
         /// incoming server time
         /// </summary>
@@ -1482,6 +1562,15 @@ namespace OsEngine.Market.Connectors
         {
             try
             {
+                if (_lastTimeFromServer != DateTime.MinValue
+                    && _lastTimeFromServer.Minute == time.Minute
+                    && _lastTimeFromServer.Second == time.Second)
+                {
+                    return;
+                }
+
+                _lastTimeFromServer = time;
+
                 if (TimeChangeEvent != null && EventsIsOn == true)
                 {
                     TimeChangeEvent(time);
@@ -2072,7 +2161,7 @@ namespace OsEngine.Market.Connectors
         /// <summary>
         /// new trade in the trades feed
         /// </summary>
-        public event Action<List<Trade>> TickChangeEvent;
+        public event Action<Trade> TickChangeEvent;
 
         /// <summary>
         /// bid or ask is changed

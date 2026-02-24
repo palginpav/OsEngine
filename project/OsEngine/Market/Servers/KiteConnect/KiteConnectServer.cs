@@ -207,6 +207,10 @@ namespace OsEngine.Market.Servers.KiteConnect
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion 1
 
         #region 2 Properties
@@ -2124,6 +2128,8 @@ namespace OsEngine.Market.Servers.KiteConnect
                 return hexHash.ToString();
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion 11
 

@@ -67,17 +67,17 @@ namespace OsEngine.Robots.AlgoStart
             // non trade periods
             _tradePeriodsSettings = new NonTradePeriods(name);
 
-            _tradePeriodsSettings.NonTradePeriod1Start = new TimeOfDay() { Hour = 5, Minute = 0 };
-            _tradePeriodsSettings.NonTradePeriod1End = new TimeOfDay() { Hour = 10, Minute = 05 };
-            _tradePeriodsSettings.NonTradePeriod1OnOff = true;
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod1Start = new TimeOfDay() { Hour = 0, Minute = 0 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod1End = new TimeOfDay() { Hour = 10, Minute = 05 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod1OnOff = true;
 
-            _tradePeriodsSettings.NonTradePeriod2Start = new TimeOfDay() { Hour = 13, Minute = 54 };
-            _tradePeriodsSettings.NonTradePeriod2End = new TimeOfDay() { Hour = 14, Minute = 6 };
-            _tradePeriodsSettings.NonTradePeriod2OnOff = false;
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod2Start = new TimeOfDay() { Hour = 13, Minute = 54 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod2End = new TimeOfDay() { Hour = 14, Minute = 6 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod2OnOff = false;
 
-            _tradePeriodsSettings.NonTradePeriod3Start = new TimeOfDay() { Hour = 18, Minute = 1 };
-            _tradePeriodsSettings.NonTradePeriod3End = new TimeOfDay() { Hour = 23, Minute = 58 };
-            _tradePeriodsSettings.NonTradePeriod3OnOff = true;
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod3Start = new TimeOfDay() { Hour = 18, Minute = 1 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod3End = new TimeOfDay() { Hour = 23, Minute = 58 };
+            _tradePeriodsSettings.NonTradePeriodGeneral.NonTradePeriod3OnOff = true;
 
             _tradePeriodsSettings.TradeInSunday = false;
             _tradePeriodsSettings.TradeInSaturday = false;
@@ -455,7 +455,7 @@ namespace OsEngine.Robots.AlgoStart
         // Close position logic
         private void LogicClosePosition(List<Candle> candles, BotTabSimple tab)
         {
-            decimal _lastPrice = candles[candles.Count - 1].Close;
+            
 
             List<Position> openPositions = tab.PositionsOpenAll;
 
@@ -463,24 +463,45 @@ namespace OsEngine.Robots.AlgoStart
             {
                 Position pos = openPositions[i];
 
-                if (pos.State != PositionStateType.Open)
+                if (StartProgram == StartProgram.IsTester
+                    || StartProgram == StartProgram.IsOsOptimizer)
                 {
-                    continue;
+                    if (pos.State != PositionStateType.Open)
+                    {
+                        return;
+                    }
                 }
 
-                decimal heightPattern =
-                    Math.Abs(tab.CandlesAll[tab.CandlesAll.Count - 4].Open - tab.CandlesAll[tab.CandlesAll.Count - 2].Close);
-
-                decimal priceStop = _lastPrice - (heightPattern * _procHeightStop.ValueDecimal) / 100;
-                decimal priceTake = _lastPrice + (heightPattern * _procHeightTake.ValueDecimal) / 100;
-
-                if(pos.StopOrderPrice == 0)
+                if (pos.StopOrderPrice == 0)
                 {
+                    int firstPatternIndex = tab.CandlesAll.Count;
+
+                    for (int i2 = candles.Count - 1; i2 >= 0; i2--)
+                    {
+                        Candle candle = candles[i2];
+
+                        if(candle.TimeStart <= pos.TimeOpen)
+                        {
+                            firstPatternIndex = i2 + 1;
+                            break;
+                        }
+                    }
+
+                    decimal lastPrice = candles[firstPatternIndex - 1].Close;
+
+                    decimal heightPattern =
+                    Math.Abs(tab.CandlesAll[firstPatternIndex - 4].Open - tab.CandlesAll[firstPatternIndex - 2].Close);
+
+                    decimal priceStop = lastPrice - (heightPattern * _procHeightStop.ValueDecimal) / 100;
+                    decimal priceTake = lastPrice + (heightPattern * _procHeightTake.ValueDecimal) / 100;
+
                     pos.StopOrderPrice = priceStop;
-                }
-                if(pos.ProfitOrderPrice == 0)
-                {
                     pos.ProfitOrderPrice = priceTake;
+
+                    if (StartProgram == StartProgram.IsOsTrader)
+                    {
+                        tab._journal.Save();
+                    }
                 }
 
                 decimal lastClose = candles[^1].Close;

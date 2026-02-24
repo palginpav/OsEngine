@@ -442,7 +442,7 @@ namespace OsEngine.Market.AutoFollow
 
         public string PanelsPosition = "1,1,1";
 
-        public decimal MinCurrencyQty = 25;
+        public decimal MinCurrencyQty = 0;
 
         public bool FailOpenOrdersReactionIsOn = true;
 
@@ -499,7 +499,11 @@ namespace OsEngine.Market.AutoFollow
                 }
             }
 
-            positionToCopy.SlaveSecurityName = positionToCopy.SecurityNameMaster;
+            if(positionToCopy.SlaveSecurityName == null)
+            {
+                positionToCopy.SlaveSecurityName = positionToCopy.SecurityNameMaster;
+            }
+         
             
 
         }
@@ -637,7 +641,7 @@ namespace OsEngine.Market.AutoFollow
                     return;
                 }
 
-                Order orderInJournal = MyJournal.IsMyOrder(order);
+                Order orderInJournal = MyJournal.IsMyOrder(order, false);
 
                 if (orderInJournal == null)
                 {
@@ -662,7 +666,7 @@ namespace OsEngine.Market.AutoFollow
                     }
                 }
 
-                MyJournal.SetNewOrder(order);
+                MyJournal.SetNewOrder(order, false);
             }
             catch (Exception ex)
             {
@@ -747,7 +751,7 @@ namespace OsEngine.Market.AutoFollow
 
             if(copyServerTime == DateTime.MinValue)
             {
-                return;
+                copyServerTime = DateTime.Now;
             }
 
             if (TradePeriodsSettings.CanTradeThisTime(copyServerTime) == false)
@@ -1384,13 +1388,13 @@ namespace OsEngine.Market.AutoFollow
             {
                 if (volume <= 0)
                 {
-                    SendLogMessage("Buy at market Error. \n"
+                    SendLogMessage("Sell at market Error. \n"
                     + "Volume: " + volume + "\n"
                     + "Security: " + security.Name, LogMessageType.Error);
                     return null;
                 }
 
-                SendLogMessage("Buy at market. \n"
+                SendLogMessage("Sell at market. \n"
                 + "Volume: " + volume + "\n"
                 + "Security: " + security.Name, LogMessageType.Trade);
 

@@ -25,8 +25,9 @@ using System.Globalization;
 using OsEngine.OsTrader.Panels.Tab;
 using System.Linq;
 using System.Windows.Forms.DataVisualization.Charting;
-using System.Windows.Media;
-using OsEngine.OsOptimizer.Algorithms;
+using System.Windows.Threading;
+using OsEngine.Instructions;
+
 
 namespace OsEngine.OsOptimizer
 {
@@ -189,6 +190,7 @@ namespace OsEngine.OsOptimizer
             LabelRobustnessMetric.Content = OsLocalization.Optimizer.Label53;
             ButtonSetStandardParameters.Content = OsLocalization.Optimizer.Label57;
             LabelSeriesResultChart.Content = OsLocalization.Optimizer.Label67;
+            LabelTotalAbsProfit.Content = OsLocalization.Optimizer.Label54;
 
             _resultsCharting = new OptimizerReportCharting(
                 HostStepsOfOptimizationTable,
@@ -207,13 +209,76 @@ namespace OsEngine.OsOptimizer
 
             GlobalGUILayout.Listen(this, "optimizerUi");
 
+            if (InteractiveInstructions.OptimizerPosts.AllInstructionsInClass == null
+            || InteractiveInstructions.OptimizerPosts.AllInstructionsInClass.Count == 0)
+            {
+                ButtonPostsOptimizer.Visibility = Visibility.Hidden;
+            }
+            else
+            {
+                ButtonPostsOptimizer.Click += ButtonPostsOptimizer_Click;
+            }
+
+            StartButtonBlinkAnimation();
+
             Task.Run(new Action(StrategyLoader));
+        }
+
+        private void StartButtonBlinkAnimation()
+        {
+            try
+            {
+                DispatcherTimer timer = new DispatcherTimer();
+                int blinkCount = 0;
+                bool isGreenVisible = true;
+
+                timer.Interval = TimeSpan.FromMilliseconds(300);
+                timer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        if (blinkCount >= 20)
+                        {
+                            timer.Stop();
+                            GreenCollectionOptimizer.Opacity = 1;
+                            WhiteCollectionOptimizer.Opacity = 0;
+                            return;
+                        }
+
+                        if (isGreenVisible)
+                        {
+                            GreenCollectionOptimizer.Opacity = 0;
+                            WhiteCollectionOptimizer.Opacity = 1;
+                        }
+                        else
+                        {
+                            GreenCollectionOptimizer.Opacity = 1;
+                            WhiteCollectionOptimizer.Opacity = 0;
+                        }
+
+                        isGreenVisible = !isGreenVisible;
+                        blinkCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                        timer.Stop();
+                    }
+                };
+
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
         }
 
         private void Ui_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             try
             {
+
                 AcceptDialogUi ui = new AcceptDialogUi(OsLocalization.Data.Label27);
                 ui.ShowDialog();
 
@@ -222,6 +287,8 @@ namespace OsEngine.OsOptimizer
                     e.Cancel = true;
                     return;
                 }
+
+                _isClosed = true;
 
                 ComboBoxThreadsCount.SelectionChanged -= ComboBoxThreadsCount_SelectionChanged;
 
@@ -320,7 +387,7 @@ namespace OsEngine.OsOptimizer
                 }
             }
             catch
-            { 
+            {
 
             }
         }
@@ -330,6 +397,8 @@ namespace OsEngine.OsOptimizer
         private OptimizerReportCharting _resultsCharting;
 
         private OptimizerMaster _master;
+
+        private bool _isClosed;
 
         private void StopUserActivity()
         {
@@ -444,7 +513,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception error)
             {
-                _master.SendLogMessage(error.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(error.ToString(), LogMessageType.Error);
             }
         }
 
@@ -470,7 +539,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception error)
             {
-                _master.SendLogMessage(error.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(error.ToString(), LogMessageType.Error);
             }
         }
 
@@ -714,6 +783,11 @@ namespace OsEngine.OsOptimizer
             {
                 Thread.Sleep(1500);
 
+                if (_isClosed == true)
+                {
+                    return;
+                }
+
                 if (MainWindow.ProccesIsWorked == false)
                 {
                     return;
@@ -752,6 +826,11 @@ namespace OsEngine.OsOptimizer
                     return;
                 }
 
+                if (_master == null)
+                {
+                    return;
+                }
+
                 ProgressBarStatus primeStatus = _master.PrimeProgressBarStatus;
 
                 if (primeStatus.MaxValue != 0 &&
@@ -769,8 +848,8 @@ namespace OsEngine.OsOptimizer
                     return;
                 }
 
-                for (int i = statuses.Count-1, i2 = _progressBars.Count-1; 
-                    i >= 0 && i2 >= 0; 
+                for (int i = statuses.Count - 1, i2 = _progressBars.Count - 1;
+                    i >= 0 && i2 >= 0;
                     i2--, i--)
                 {
                     ProgressBarStatus status = statuses[i];
@@ -780,11 +859,11 @@ namespace OsEngine.OsOptimizer
                         return;
                     }
 
-                    if(_progressBars[i2].Maximum != status.MaxValue)
+                    if (_progressBars[i2].Maximum != status.MaxValue)
                     {
                         _progressBars[i2].Maximum = status.MaxValue;
                     }
-                    if(_progressBars[i2].Value != status.CurrentValue)
+                    if (_progressBars[i2].Value != status.CurrentValue)
                     {
                         _progressBars[i2].Value = status.CurrentValue;
                     }
@@ -792,7 +871,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -881,7 +960,7 @@ namespace OsEngine.OsOptimizer
 
                 ProgressBarPrime.Value = 0;
 
-                if(_progressBars != null && _progressBars.Count > 0)
+                if (_progressBars != null && _progressBars.Count > 0)
                 {
                     for (int i2 = 0; i2 < _progressBars.Count; i2++)
                     {
@@ -1031,13 +1110,10 @@ namespace OsEngine.OsOptimizer
         private void CommissionValueTextBoxOnTextChanged(object sender, TextChangedEventArgs e)
         {
             decimal commissionValue;
+
             try
             {
-                var isParsed = decimal.TryParse(CommissionValueTextBox.Text, out commissionValue);
-                if (!isParsed || commissionValue < 0)
-                {
-                    throw new Exception();
-                }
+                commissionValue = CommissionValueTextBox.Text.ToDecimal();
             }
             catch
             {
@@ -1075,7 +1151,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -1117,6 +1193,7 @@ namespace OsEngine.OsOptimizer
         private void CreateTableSources()
         {
             _gridSources = DataGridFactory.GetDataGridView(DataGridViewSelectionMode.ColumnHeaderSelect, DataGridViewAutoSizeRowsMode.AllCells);
+            _gridSources.ScrollBars = ScrollBars.Vertical;
 
             DataGridViewTextBoxCell cell0 = new DataGridViewTextBoxCell();
             cell0.Style = _gridSources.DefaultCellStyle;
@@ -1167,7 +1244,7 @@ namespace OsEngine.OsOptimizer
 
         private void _gridSources_DataError(object sender, DataGridViewDataErrorEventArgs e)
         {
-            _master.SendLogMessage(e.ToString(), LogMessageType.Error);
+            _master?.SendLogMessage(e.ToString(), LogMessageType.Error);
         }
 
         private void PaintTableSources()
@@ -1213,6 +1290,8 @@ namespace OsEngine.OsOptimizer
                 return;
             }
 
+            int selectedRow = _gridSources.FirstDisplayedScrollingRowIndex;
+
             _gridSources.Rows.Clear();
 
             if (sources == null)
@@ -1237,12 +1316,18 @@ namespace OsEngine.OsOptimizer
                     row = GetBotTabScreenerRow((BotTabScreener)sources[i], i + 1);
                 }
 
-                if(row == null)
+                if (row == null)
                 {
                     return;
                 }
 
                 _gridSources.Rows.Add(row);
+            }
+
+            if (selectedRow != -1
+                && selectedRow > _gridSources.Rows.Count)
+            {
+                _gridSources.FirstDisplayedScrollingRowIndex = selectedRow;
             }
         }
 
@@ -1400,7 +1485,7 @@ namespace OsEngine.OsOptimizer
             row.Cells.Add(cell2);
 
             DataGridViewButtonCell button = new DataGridViewButtonCell();
-            button.Value = "Settings";
+            button.Value = OsLocalization.Optimizer.Message22;
             row.Cells.Add(button);
 
             return row;
@@ -1437,7 +1522,7 @@ namespace OsEngine.OsOptimizer
             row.Cells.Add(cell2);
 
             DataGridViewButtonCell button = new DataGridViewButtonCell();
-            button.Value = "Settings";
+            button.Value = OsLocalization.Optimizer.Message22;
             row.Cells.Add(button);
 
             return row;
@@ -1477,7 +1562,7 @@ namespace OsEngine.OsOptimizer
             cell2.ReadOnly = true;
 
             DataGridViewButtonCell button = new DataGridViewButtonCell();
-            button.Value = "Settings";
+            button.Value = OsLocalization.Optimizer.Message22;
             row.Cells.Add(button);
 
             return row;
@@ -1543,22 +1628,22 @@ namespace OsEngine.OsOptimizer
 
                 BotPanel bot = _master.BotToTest;
 
-                if(bot == null)
+                if (bot == null)
                 {
                     return;
                 }
 
                 List<IIBotTab> sources = bot.GetTabs();
 
-                if (sources == null 
+                if (sources == null
                     || sources.Count == 0
                     || rowIndex >= sources.Count)
                 {
                     return;
                 }
 
-                if(_master.Storage == null 
-                    || _master.Storage.Securities == null 
+                if (_master.Storage == null
+                    || _master.Storage.Securities == null
                     || _master.Storage.Securities.Count == 0)
                 {
                     CustomMessageBoxUi ui = new CustomMessageBoxUi(OsLocalization.Optimizer.Label70);
@@ -1601,7 +1686,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -1983,7 +2068,7 @@ namespace OsEngine.OsOptimizer
             {
                 return;
             }
-            _master.SendLogMessage(e.ToString(), LogMessageType.Error);
+            _master?.SendLogMessage(e.ToString(), LogMessageType.Error);
         }
 
         private void PaintTableParameters()
@@ -2048,7 +2133,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -2579,7 +2664,9 @@ namespace OsEngine.OsOptimizer
             try
             {
 
-                for (int i_param = 0, i_grid = 0; i_param < _parameters.Count; i_param++, i_grid++)
+                for (int i_param = 0, i_grid = 0;
+                    i_param < _parameters.Count && i_grid < _gridParameters.Rows.Count;
+                    i_param++, i_grid++)
                 {
                     IIStrategyParameter parameter = _parameters[i_param];
                     DataGridViewRow row = _gridParameters.Rows[i_grid];
@@ -2750,8 +2837,9 @@ namespace OsEngine.OsOptimizer
                 }
                 _master.SaveStandardParameters();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
                 PaintTableParameters();
             }
         }
@@ -2834,7 +2922,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.Message.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.Message.ToString(), LogMessageType.Error);
             }
         }
 
@@ -2994,7 +3082,7 @@ namespace OsEngine.OsOptimizer
 
             DataGridViewColumn column3 = new DataGridViewColumn();
             column3.CellTemplate = cell0;
-            column3.HeaderText = "Max Drow Dawn";
+            column3.HeaderText = "Max Drow Dawn %";
             column3.ReadOnly = false;
             column3.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
             _gridResults.Columns.Add(column3);
@@ -3093,7 +3181,7 @@ namespace OsEngine.OsOptimizer
                 _gridResults.Columns[3].HeaderCell.Style.BackColor = cellColor;
             }
 
-            _gridResults.Columns[4].HeaderText = "Max Drow Dawn";
+            _gridResults.Columns[4].HeaderText = "Max Drow Dawn %";
             if (_sortBotsType == SortBotsType.MaxDrawDawn)
             {
                 _gridResults.Columns[4].HeaderText += " vvv";
@@ -3280,7 +3368,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(),LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -3340,7 +3428,7 @@ namespace OsEngine.OsOptimizer
                 }
                 catch (Exception error)
                 {
-                    _master.SendLogMessage(error.ToString(), LogMessageType.Error);
+                    _master?.SendLogMessage(error.ToString(), LogMessageType.Error);
                 }
             };
         }
@@ -3454,7 +3542,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception error)
             {
-                _master.SendLogMessage(error.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(error.ToString(), LogMessageType.Error);
             }
 
         }
@@ -3581,7 +3669,7 @@ namespace OsEngine.OsOptimizer
             }
             catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -3627,6 +3715,11 @@ namespace OsEngine.OsOptimizer
                  + (num + 1) + " " + fazeReport.Faze.TypeFaze + ". "
                  + OsLocalization.Optimizer.Label39 + ": " + _sortBotsType;
 
+
+                if (_sortBotsType == SortBotsType.MaxDrawDawn)
+                {
+                    LabelSeriesResultChart.Content += " %";
+                }
 
                 List<ChartOptimizationResultValue> values = new List<ChartOptimizationResultValue>();
 
@@ -3758,9 +3851,9 @@ namespace OsEngine.OsOptimizer
                     }
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                _master.SendLogMessage(ex.ToString(), LogMessageType.Error);
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -3821,13 +3914,14 @@ namespace OsEngine.OsOptimizer
             {
                 DateTime start = DateTime.Now;
 
-                _master.SendLogMessage(OsLocalization.Optimizer.Message11, LogMessageType.System);
+                _master?.SendLogMessage(OsLocalization.Optimizer.Message11, LogMessageType.System);
 
                 List<string> strategiesInclude = BotFactory.GetNamesStrategyWithParametersSync();
 
-                _master.SendLogMessage(OsLocalization.Optimizer.Message19 + " " + strategiesInclude.Count, LogMessageType.System);
+                _master?.SendLogMessage(OsLocalization.Optimizer.Message19 + " " + strategiesInclude.Count, LogMessageType.System);
 
-                if (string.IsNullOrEmpty(_master.StrategyName))
+                if (_master == null
+                    || string.IsNullOrEmpty(_master.StrategyName))
                 {
                     return;
                 }
@@ -3846,6 +3940,50 @@ namespace OsEngine.OsOptimizer
 
         #endregion
 
+        #region Posts collection
+
+        private InstructionsUi _instructionsUi;
+
+        private void ButtonPostsOptimizer_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_instructionsUi == null)
+                {
+                    _instructionsUi = new InstructionsUi(
+                        InteractiveInstructions.OptimizerPosts.AllInstructionsInClass, InteractiveInstructions.OptimizerPosts.AllInstructionsInClassDescription);
+                    _instructionsUi.Show();
+                    _instructionsUi.Closed += _instructionsUi_Closed;
+                }
+                else
+                {
+                    if (_instructionsUi.WindowState == WindowState.Minimized)
+                    {
+                        _instructionsUi.WindowState = WindowState.Normal;
+                    }
+                    _instructionsUi.Activate();
+                }
+            }
+            catch (Exception ex)
+            {
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void _instructionsUi_Closed(object sender, EventArgs e)
+        {
+            try
+            {
+                _instructionsUi.Closed -= _instructionsUi_Closed;
+                _instructionsUi = null;
+            }
+            catch (Exception ex)
+            {
+                _master?.SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        #endregion
     }
 
     public enum SortBotsType

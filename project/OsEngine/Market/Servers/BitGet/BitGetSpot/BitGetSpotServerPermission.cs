@@ -96,7 +96,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetSpot
 
         public bool DataFeedTfDayCanLoad
         {
-            get { return false; }
+            get { return true; }
         }
 
         public bool DataFeedTfTickCanLoad
@@ -140,7 +140,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetSpot
                 TimeFrameHour1IsOn = true,
                 TimeFrameHour2IsOn = false,
                 TimeFrameHour4IsOn = true,
-                TimeFrameDayIsOn = false
+                TimeFrameDayIsOn = true
             };
 
         public int WaitTimeSecondsAfterFirstStartToSendOrders
@@ -265,7 +265,7 @@ namespace OsEngine.Market.Servers.BitGet.BitGetSpot
             get { return 10; }
         }
 
-        public string[] IpAddresServer
+        public string[] IpAddressServer
         {
             get
             {
@@ -276,6 +276,23 @@ namespace OsEngine.Market.Servers.BitGet.BitGetSpot
 
                 return pingIpDomens;
             }
+        }
+
+        public bool Leverage_IsSupports
+        {
+            get { return false; }
+        }
+
+        public decimal Leverage_StandardValue
+        {
+            get { return 10; }
+        }
+
+        public string[] Leverage_SupportClasses { get; }
+
+        public bool CanChangeOrderMarketNumber
+        {
+            get { return false; }
         }
 
         #endregion

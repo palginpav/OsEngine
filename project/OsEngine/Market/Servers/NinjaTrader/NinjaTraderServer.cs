@@ -37,8 +37,10 @@ namespace OsEngine.Market.Servers.NinjaTrader
 
         public DateTime ServerTime { get; set; }
 
- // requests
- // запросы
+        public bool IsCompletelyDeleted { get; set; }
+
+        // requests
+        // запросы
 
         private NinjaTraderClient _client;
 
@@ -287,6 +289,8 @@ namespace OsEngine.Market.Servers.NinjaTrader
         /// </summary>
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
         public event Action<OptionMarketDataForConnector> AdditionalMarketDataEvent { add { } remove { } }
 
         // log messages
@@ -328,5 +332,7 @@ namespace OsEngine.Market.Servers.NinjaTrader
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
 
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public void SetLeverage(Security security, decimal leverage) { }
     }
 }

@@ -38,6 +38,12 @@ namespace OsEngine.Market.Servers.BitMartFutures
             CreateParameterBoolean("Hedge Mode", true);
             CreateParameterBoolean("Extended Data", false);
             ServerParameters[3].ValueChange += BitMartFuturesServer_ValueChange;
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
+            ServerParameters[2].Comment = OsLocalization.Market.Label271;
+            ServerParameters[3].Comment = OsLocalization.Market.Label250;
+            ServerParameters[4].Comment = OsLocalization.Market.Label270;
         }
 
         private void BitMartFuturesServer_ValueChange()
@@ -167,6 +173,10 @@ namespace OsEngine.Market.Servers.BitMartFutures
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1334,8 +1344,8 @@ namespace OsEngine.Market.Servers.BitMartFutures
         {
             try
             {
-                if (_webSocketPublic.Count != 0
-                    && _webSocketPublic != null)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
                     for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
@@ -2825,6 +2835,8 @@ namespace OsEngine.Market.Servers.BitMartFutures
             byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
             return BitConverter.ToString(hash).Replace("-", "").ToLower();
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

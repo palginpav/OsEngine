@@ -33,8 +33,14 @@ namespace OsEngine.Market.Servers.Deribit
             CreateParameterString("Client ID", "");
             CreateParameterString("Client Secret", "");
             CreateParameterEnum("Currency", "All", new List<string> { "All", "BTC", "ETH", "USDC", "USDT", "SOL", "MATIC", "XRP" });
-            CreateParameterEnum("Server", "Real", new List<string> { "Real", "Test" }); // можно выбрать сервер - реальный или тестовый, на каждам свои аккауты и api ключи
+            CreateParameterEnum("Server", "Real", new List<string> { "Real", "Test" });
             CreateParameterBoolean("Post Only for Limit Orders", false);
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label272;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
+            ServerParameters[2].Comment = OsLocalization.Market.Label274;
+            ServerParameters[3].Comment = OsLocalization.Market.Label275;
+            ServerParameters[4].Comment = OsLocalization.Market.Label276;
         }
     }
 
@@ -160,6 +166,10 @@ namespace OsEngine.Market.Servers.Deribit
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1781,6 +1791,8 @@ namespace OsEngine.Market.Servers.Deribit
                 return BitConverter.ToString(hash).Replace("-", "").ToLower();
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

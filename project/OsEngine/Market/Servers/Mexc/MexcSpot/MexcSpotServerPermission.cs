@@ -244,7 +244,7 @@ namespace OsEngine.Market.Servers.Mexc
 
         public bool IsSupports_ProxyFor_MultipleInstances
         {
-            get { return false; }
+            get { return true; }
         }
 
         public bool IsSupports_AsyncOrderSending
@@ -267,7 +267,7 @@ namespace OsEngine.Market.Servers.Mexc
             get { return 10; }
         }
 
-        public string[] IpAddresServer
+        public string[] IpAddressServer
         {
             get
             {
@@ -280,6 +280,22 @@ namespace OsEngine.Market.Servers.Mexc
             }
         }
 
+        public bool Leverage_IsSupports
+        {
+            get { return false; }
+        }
+
+        public decimal Leverage_StandardValue
+        {
+            get { return 10; }
+        }
+
+        public string[] Leverage_SupportClasses { get; }
+
+        public bool CanChangeOrderMarketNumber
+        {
+            get { return false; }
+        }
         #endregion
     }
 }

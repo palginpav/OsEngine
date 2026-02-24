@@ -51,6 +51,11 @@ namespace OsEngine.Market.Servers
         void Dispose();
 
         /// <summary>
+        /// Connector object has been completely deleted
+        /// </summary>
+        bool IsCompletelyDeleted { get; set; }
+
+        /// <summary>
         /// API connection established
         /// </summary>
         event Action ConnectEvent;
@@ -59,6 +64,11 @@ namespace OsEngine.Market.Servers
         /// API connection broke
         /// </summary>
         event Action DisconnectEvent;
+
+        /// <summary>
+        /// Need to re-request order statuses from the connector
+        /// </summary>
+        event Action ForceCheckOrdersAfterReconnectEvent;
 
         #endregion
 
@@ -73,6 +83,11 @@ namespace OsEngine.Market.Servers
         /// New securities in the system
         /// </summary>
         event Action<List<Security>> SecurityEvent;
+
+        /// <summary>
+        /// Set leverage on security
+        /// </summary>
+        void SetLeverage(Security security, decimal leverage);
 
         #endregion
 
@@ -151,6 +166,14 @@ namespace OsEngine.Market.Servers
         /// Take ticks data for period
         /// </summary>
         List<Trade> GetTickDataToSecurity(Security security, DateTime startTime, DateTime endTime, DateTime actualTime);
+
+        /// <summary>
+        /// take historical depths .qsh format
+        /// </summary>
+        List<string> GetQshHistoryFileToSecurity(Security security, DateTime startTime, DateTime endTime, DateTime actualTime)
+        {
+            return null;
+        }
 
         #endregion
 

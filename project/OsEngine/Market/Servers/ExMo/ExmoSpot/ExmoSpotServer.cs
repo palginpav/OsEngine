@@ -32,6 +32,9 @@ namespace OsEngine.Market.Servers.ExMo.ExmoSpot
 
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
         }
     }
 
@@ -126,6 +129,10 @@ namespace OsEngine.Market.Servers.ExMo.ExmoSpot
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1020,8 +1027,8 @@ namespace OsEngine.Market.Servers.ExMo.ExmoSpot
         {
             try
             {
-                if (_webSocketPublic.Count != 0
-                    && _webSocketPublic != null)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
                     for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
@@ -2150,6 +2157,8 @@ namespace OsEngine.Market.Servers.ExMo.ExmoSpot
             }
             return (sbinary).ToLowerInvariant();
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

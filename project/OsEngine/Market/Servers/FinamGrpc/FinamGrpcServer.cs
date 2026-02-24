@@ -163,11 +163,15 @@ namespace OsEngine.Market.Servers.FinamGrpc
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
         public DateTime ServerTime { get; set; }
 
         public ServerConnectStatus ServerStatus { get; set; } = ServerConnectStatus.Disconnect;
 
         public List<IServerParameter> ServerParameters { get; set; }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -2057,6 +2061,8 @@ namespace OsEngine.Market.Servers.FinamGrpc
                 _ => FTimeFrame.Unspecified
             };
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

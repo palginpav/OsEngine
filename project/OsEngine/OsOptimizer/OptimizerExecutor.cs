@@ -584,14 +584,15 @@ namespace OsEngine.OsOptimizer
 
                 while (_servers.Count >= _master.ThreadsCount)
                 {
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                 }
 
                 if (_needToStop)
                 {
                     while (true)
                     {
-                        Thread.Sleep(50);
+                        Thread.Sleep(1);
+
                         if (_servers.Count == 0)
                         {
                             break;
@@ -605,7 +606,7 @@ namespace OsEngine.OsOptimizer
 
                 while (_botsInTest.Count >= _master.ThreadsCount)
                 {
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                 }
 
                 //SendLogMessage("BotInSample" ,LogMessageType.System);
@@ -617,7 +618,6 @@ namespace OsEngine.OsOptimizer
             {
                 Thread.Sleep(50);
                 if (_servers.Count == 0)
-                //   || _botsInTest.Count == 0)
                 {
                     break;
                 }
@@ -634,14 +634,14 @@ namespace OsEngine.OsOptimizer
             {
                 while (_servers.Count >= _master.ThreadsCount)
                 {
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                 }
 
                 if (_needToStop)
                 {
                     while (true)
                     {
-                        Thread.Sleep(50);
+                        Thread.Sleep(1);
                         if (_servers.Count == 0)
                         {
                             break;
@@ -658,7 +658,7 @@ namespace OsEngine.OsOptimizer
 
                 while (_botsInTest.Count >= _master.ThreadsCount)
                 {
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                 }
                 // SendLogMessage("Bot Out of Sample", LogMessageType.System);
                 StartNewBot(reportInSample.Reports[i].GetParameters(), null, report,
@@ -667,7 +667,7 @@ namespace OsEngine.OsOptimizer
 
             while (true)
             {
-                Thread.Sleep(50);
+                Thread.Sleep(1);
                 if (_servers.Count == 0)// && _botsInTest.Count == 0)
                 {
                     break;
@@ -843,7 +843,6 @@ namespace OsEngine.OsOptimizer
                 _botsInTest.Add(bot);
             }
 
-            Thread.Sleep(200);
             server.TestingStart();
         }
 
@@ -1285,7 +1284,7 @@ namespace OsEngine.OsOptimizer
 
             while (bot.IsConnected == false)
             {
-                Thread.Sleep(100); // Increased sleep time to reduce CPU usage
+                Thread.Sleep(10);
 
                 if (timeStartWaiting.AddSeconds(60) < DateTime.Now) // Increased timeout from 20 to 60 seconds
                 {

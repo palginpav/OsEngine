@@ -126,6 +126,10 @@ namespace OsEngine.Market.Servers.AE
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -1206,6 +1210,8 @@ namespace OsEngine.Market.Servers.AE
             var pfxBytes = certificate.Export(X509ContentType.Pfx, string.IsNullOrEmpty(pemPassphrase) ? null : pemPassphrase);
             return X509CertificateLoader.LoadPkcs12(pfxBytes, pemPassphrase, X509KeyStorageFlags.UserKeySet | X509KeyStorageFlags.Exportable);
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

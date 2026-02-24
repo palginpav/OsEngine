@@ -265,7 +265,7 @@ namespace OsEngine.Market.Servers.Deribit
             get { return 10; }
         }
 
-        public string[] IpAddresServer
+        public string[] IpAddressServer
         {
             get
             {
@@ -277,6 +277,23 @@ namespace OsEngine.Market.Servers.Deribit
 
                 return pingIpDomens;
             }
+        }
+
+        public bool Leverage_IsSupports
+        {
+            get { return false; }
+        }
+
+        public decimal Leverage_StandardValue
+        {
+            get { return 10; }
+        }
+
+        public string[] Leverage_SupportClasses { get; }
+
+        public bool CanChangeOrderMarketNumber
+        {
+            get { return false; }
         }
 
         #endregion

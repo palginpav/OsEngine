@@ -1,4 +1,9 @@
-﻿using Newtonsoft.Json.Linq;
+﻿/*
+ * Your rights to use code governed by this license https://github.com/AlexWan/OsEngine/blob/master/LICENSE
+ * Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
+*/
+
+using Newtonsoft.Json.Linq;
 using OsEngine.Entity;
 using OsEngine.Logging;
 using OsEngine.Market.Servers.Entity;
@@ -68,7 +73,12 @@ namespace OsEngine.Market.Servers.MOEX
         }
 
         public event Action ConnectEvent;
+
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -146,7 +156,7 @@ namespace OsEngine.Market.Servers.MOEX
 
             List<Security> newSecurities = new List<Security>();
 
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 8; i++)
             {
                 newSecurities.AddRange(GetFuturesForOneYear(futName, idEnding, DateTime.Now.Year - i - 2000));
             }
@@ -513,7 +523,7 @@ namespace OsEngine.Market.Servers.MOEX
                     while (newCandle.TimeStart.Minute != 0
                         && newCandle.TimeStart.Minute % endTf != 0)
                     {
-                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(1);
+                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(-1);
                     }
                 }
                 if (startTf == 10
@@ -522,7 +532,7 @@ namespace OsEngine.Market.Servers.MOEX
                     while (newCandle.TimeStart.Minute != 0
                         && newCandle.TimeStart.Minute != 30)
                     {
-                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(1);
+                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(-1);
                     }
                 }
 
@@ -532,7 +542,7 @@ namespace OsEngine.Market.Servers.MOEX
                     while (newCandle.TimeStart.Minute != 0
                         && newCandle.TimeStart.Minute % 5 != 0)
                     {
-                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(1);
+                        newCandle.TimeStart = newCandle.TimeStart.AddMinutes(-1);
                     }
                 }
 
@@ -544,8 +554,15 @@ namespace OsEngine.Market.Servers.MOEX
                 newCandle.State = CandleState.Finished;
                 i++;
 
-                for (int i2 = 0; i2 < countOldCandlesInOneNew - 1 && i < candlesOld.Count; i2++)
+                DateTime EndCandleTime = newCandle.TimeStart.Add(candleMinuteLen);
+
+                while (true)
                 {
+                    if(i >= candlesOld.Count)
+                    {
+                        break;
+                    }
+
                     if (newCandle.TimeStart.Hour != 10 &&
                         newCandle.TimeStart.Minute != 0 &&
                         candlesOld[i].TimeStart.Hour == 10 &&
@@ -559,8 +576,6 @@ namespace OsEngine.Market.Servers.MOEX
                         i--;
                         break;
                     }
-
-                    DateTime EndCandleTime = newCandle.TimeStart.Add(candleMinuteLen);
 
                     if (candlesOld[i].TimeStart >= EndCandleTime)
                     {
@@ -580,10 +595,7 @@ namespace OsEngine.Market.Servers.MOEX
                     newCandle.Close = candlesOld[i].Close;
                     newCandle.Volume += candlesOld[i].Volume;
 
-                    if (i2 + 1 < countOldCandlesInOneNew - 1)
-                    {
-                        i++;
-                    }
+                    i++;
                 }
 
                 candlesNew.Add(newCandle);
@@ -657,6 +669,11 @@ namespace OsEngine.Market.Servers.MOEX
 
             string response = GetRequest(str);
 
+            if (string.IsNullOrEmpty(response))
+            {
+                return null;
+            }
+
             List<Candle> result = new List<Candle>();
 
             JObject json = JObject.Parse(response);
@@ -697,7 +714,8 @@ namespace OsEngine.Market.Servers.MOEX
             {
                 RestRequest requestRest = new RestRequest(Method.GET);
                 RestClient client = new RestClient(url);
-                var responseMessage = client.Execute(requestRest).Content;
+
+                string responseMessage = client.Execute(requestRest).Content;
                 return responseMessage;
             }
             catch (Exception error)
@@ -775,6 +793,8 @@ namespace OsEngine.Market.Servers.MOEX
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
 
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
     }

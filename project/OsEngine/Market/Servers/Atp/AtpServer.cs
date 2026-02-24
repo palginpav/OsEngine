@@ -346,6 +346,8 @@ namespace OsEngine.Market.Servers.Atp
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
         public bool TradeRouterIsActivate
         {
             get
@@ -521,6 +523,8 @@ namespace OsEngine.Market.Servers.Atp
                 File.Delete(files[i]);
             }
         }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1885,6 +1889,8 @@ namespace OsEngine.Market.Servers.Atp
         {
             return null;
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

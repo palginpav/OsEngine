@@ -3,29 +3,33 @@
  * Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
 */
 
+using OsEngine.Entity;
+using OsEngine.Instructions;
+using OsEngine.Journal.Internal;
+using OsEngine.Language;
+using OsEngine.Layout;
+using OsEngine.Logging;
+using OsEngine.Market;
+using OsEngine.OsData;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
-using OsEngine.Entity;
-using OsEngine.Journal.Internal;
-using OsEngine.Logging;
-using Color = System.Drawing.Color;
 using System.Windows.Forms.DataVisualization.Charting;
-using OsEngine.Language;
+using System.Windows.Media;
+using System.Windows.Threading;
+using static OsEngine.Market.Servers.Deribit.Entity.ResponseChannelUserChanges;
 using Chart = System.Windows.Forms.DataVisualization.Charting.Chart;
 using ChartArea = System.Windows.Forms.DataVisualization.Charting.ChartArea;
+using Color = System.Drawing.Color;
 using Series = System.Windows.Forms.DataVisualization.Charting.Series;
-using System.Threading;
-using OsEngine.Layout;
-using OsEngine.Market;
-using System.Windows.Media;
 
 namespace OsEngine.Journal
 {
@@ -42,6 +46,7 @@ namespace OsEngine.Journal
         {
             InitializeComponent();
             OsEngine.Layout.StickyBorders.Listen(this);
+
             _startProgram = startProgram;
             _botsJournals = botsJournals;
 
@@ -54,11 +59,12 @@ namespace OsEngine.Journal
             ComboBoxChartType.Items.Add("Percent 1 contract");
             ComboBoxChartType.SelectedItem = "Absolute";
 
-            ComboBoxBenchmark.Items.Add("Off");
-            ComboBoxBenchmark.Items.Add("SnP");
-            ComboBoxBenchmark.Items.Add("MCRTR");
-            ComboBoxBenchmark.Items.Add("BTC");
-            ComboBoxBenchmark.SelectedItem = "Off";
+            ComboBoxBenchmark.Items.Add(BenchmarkSecurity.Off.ToString());
+            ComboBoxBenchmark.Items.Add(BenchmarkSecurity.BTC.ToString());
+            ComboBoxBenchmark.Items.Add(BenchmarkSecurity.MCFTR.ToString());
+            ComboBoxBenchmark.Items.Add(BenchmarkSecurity.SnP500.ToString());
+            ComboBoxBenchmark.Items.Add(BenchmarkSecurity.IMOEX.ToString());
+            ComboBoxBenchmark.SelectedItem = BenchmarkSecurity.Off.ToString();
 
             _currentCulture = OsLocalization.CurCulture;
 
@@ -106,6 +112,9 @@ namespace OsEngine.Journal
             LabelEqutyCharteType.Content = OsLocalization.Journal.Label8;
             LabelBenchmark.Content = OsLocalization.Journal.Label23;
 
+            TabItemSecurities.Header = OsLocalization.Journal.TabItemSecurities;
+            TabItemPortfolio.Header = OsLocalization.Journal.TabItemPortfolio;
+
             CreatePositionsLists();
 
             SelectOpenPosesPages();
@@ -150,7 +159,9 @@ namespace OsEngine.Journal
 
             ComboBoxChartType.SelectionChanged += ComboBoxChartType_SelectionChanged;
             TabControlPrime.SelectionChanged += TabControlPrime_SelectionChanged;
+            TabControlVolume.SelectionChanged += TabControlVolume_SelectionChanged;
             ComboBoxBenchmark.SelectionChanged += ComboBoxBenchmark_SelectionChanged;
+            VolumeShowNumbers.SelectionChanged += VolumeShowNumbers_SelectionChanged;
 
             CheckBoxShowDontOpenPoses.Click += CheckBoxShowDontOpenPoses_Click;
             CheckBoxShowDontOpenPoses.Content = OsLocalization.Journal.Label17;
@@ -158,6 +169,68 @@ namespace OsEngine.Journal
             GlobalGUILayout.Listen(this, JournalName);
 
             RePaint();
+
+            if (InteractiveInstructions.Journal2Posts.AllInstructionsInClass == null
+             || InteractiveInstructions.Journal2Posts.AllInstructionsInClass.Count == 0)
+            {
+                ButtonPostsJournal2.Visibility = Visibility.Hidden;
+            }
+            else
+            {
+                ButtonPostsJournal2.Click += ButtonPostsJournal2_Click;
+            }
+
+            StartButtonBlinkAnimation();
+        }
+
+        private void StartButtonBlinkAnimation()
+        {
+            try
+            {
+                DispatcherTimer timer = new DispatcherTimer();
+                int blinkCount = 0;
+                bool isGreenVisible = true;
+
+                timer.Interval = TimeSpan.FromMilliseconds(300);
+                timer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        if (blinkCount >= 20)
+                        {
+                            timer.Stop();
+                            GreenCollectionJournal2.Opacity = 1;
+                            WhiteCollectionJournal2.Opacity = 0;
+                            return;
+                        }
+
+                        if (isGreenVisible)
+                        {
+                            GreenCollectionJournal2.Opacity = 0;
+                            WhiteCollectionJournal2.Opacity = 1;
+                        }
+                        else
+                        {
+                            GreenCollectionJournal2.Opacity = 1;
+                            WhiteCollectionJournal2.Opacity = 0;
+                        }
+
+                        isGreenVisible = !isGreenVisible;
+                        blinkCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+                        timer.Stop();
+                    }
+                };
+
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
         }
 
         private void JournalUi_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -167,10 +240,12 @@ namespace OsEngine.Journal
                 IsErase = true;
 
                 TabControlPrime.SelectionChanged -= TabControlPrime_SelectionChanged;
+                TabControlVolume.SelectionChanged -= TabControlVolume_SelectionChanged;
                 ComboBoxChartType.SelectionChanged -= ComboBoxChartType_SelectionChanged;
                 VolumeShowNumbers.SelectionChanged -= VolumeShowNumbers_SelectionChanged;
                 ComboBoxBenchmark.SelectionChanged -= ComboBoxBenchmark_SelectionChanged;
                 TabControlPrime.Items.Clear();
+                TabControlVolume.Items.Clear();
 
                 Closing -= JournalUi_Closing;
                 _botsJournals.Clear();
@@ -218,6 +293,33 @@ namespace OsEngine.Journal
                     HostVolume = null;
                 }
 
+                if (_chartPortfolio != null)
+                {
+                    _chartPortfolio.MouseMove -= _chartEquity_MouseMove;
+                    _chartPortfolio.MouseWheel -= _chartEquity_MouseWheel;
+                    _chartPortfolio.Series.Clear();
+                    _chartPortfolio.ChartAreas.Clear();
+                    _chartPortfolio = null;
+                }
+
+                if (_gridLeveragePortfolio != null)
+                {
+                    DataGridFactory.ClearLinks(_gridLeveragePortfolio);
+                    _gridLeveragePortfolio.Rows.Clear();
+                    _gridLeveragePortfolio.DataError -= _gridLeveragePortfolio_DataError;
+                    _gridLeveragePortfolio.Dispose();
+                    _gridLeveragePortfolio = null;
+                }
+
+                if (_layoutPanelPortfolio != null)
+                {
+                    _layoutPanelPortfolio.Controls.Clear();
+                    _layoutPanelPortfolio = null;
+                    HostVolumePortfolio.Child.Hide();
+                    HostVolumePortfolio.Child = null;
+                    HostVolumePortfolio = null;
+                }
+
                 if (_chartDd != null)
                 {
                     _chartDd.Series.Clear();
@@ -245,6 +347,7 @@ namespace OsEngine.Journal
                     DataGridFactory.ClearLinks(_openPositionGrid);
                     _openPositionGrid.Rows.Clear();
                     _openPositionGrid.Click -= _openPositionGrid_Click;
+                    _openPositionGrid.CellClick -= _gridOpenDeal_CellClick;
                     _openPositionGrid.DoubleClick -= _openPositionGrid_DoubleClick;
                     _openPositionGrid.DataError -= _gridStatistics_DataError;
                     _openPositionGrid.Dispose();
@@ -264,6 +367,7 @@ namespace OsEngine.Journal
                     DataGridFactory.ClearLinks(_closePositionGrid);
                     _closePositionGrid.Rows.Clear();
                     _closePositionGrid.Click -= _closePositionGrid_Click;
+                    _closePositionGrid.CellClick -= _gridCloseDeal_CellClick;
                     _closePositionGrid.DoubleClick -= _closePositionGrid_DoubleClick;
                     _closePositionGrid.DataError -= _gridStatistics_DataError;
                     _closePositionGrid.Dispose();
@@ -388,7 +492,6 @@ namespace OsEngine.Journal
                     return;
                 }
 
-
                 List<Position> allSortPoses = new List<Position>();
                 List<Position> longPositions = new List<Position>();
                 List<Position> shortPositions = new List<Position>();
@@ -399,11 +502,13 @@ namespace OsEngine.Journal
                     {
                         continue;
                     }
+
                     if (_allPositions[i].TimeCreate < _startTime
                         || _allPositions[i].TimeCreate > _endTime)
                     {
                         continue;
                     }
+
                     allSortPoses.Add(_allPositions[i]);
                 }
 
@@ -413,11 +518,13 @@ namespace OsEngine.Journal
                     {
                         continue;
                     }
+
                     if (_longPositions[i].TimeCreate < _startTime
                         || _longPositions[i].TimeCreate > _endTime)
                     {
                         continue;
                     }
+
                     longPositions.Add(_longPositions[i]);
                 }
 
@@ -427,48 +534,46 @@ namespace OsEngine.Journal
                     {
                         continue;
                     }
+
                     if (_shortPositions[i].TimeCreate < _startTime
                         || _shortPositions[i].TimeCreate > _endTime)
                     {
                         continue;
                     }
+
                     shortPositions.Add(_shortPositions[i]);
                 }
 
-                lock (_paintLocker)
+                if (TabControlPrime.SelectedIndex == -1 ||
+                    TabControlPrime.SelectedIndex == 0)
                 {
-
-                    if (TabControlPrime.SelectedIndex == -1 ||
-                        TabControlPrime.SelectedIndex == 0)
-                    {
-                        PaintProfitOnChart(allSortPoses);
-                    }
-                    else if (TabControlPrime.SelectedIndex == 1)
-                    {
-                        bool needShowTickState = !(_botsJournals.Count > 1);
-
-                        PaintStatTable(allSortPoses, longPositions, shortPositions, needShowTickState);
-                    }
-                    else if (TabControlPrime.SelectedIndex == 2)
-                    {
-                        PaintDrawDown(allSortPoses);
-                    }
-                    else if (TabControlPrime.SelectedIndex == 3)
-                    {
-                        PaintVolumeOnChart(allSortPoses);
-                    }
-                    else if (TabControlPrime.SelectedIndex == 4)
-                    {
-                        PaintOpenPositionGrid(allSortPoses);
-                    }
-                    else if (TabControlPrime.SelectedIndex == 5)
-                    {
-                        PaintClosePositionGrid();
-                    }
-
-                    PaintTitleAbsProfit(allSortPoses);
-
+                    PaintProfitOnChart(allSortPoses);
                 }
+                else if (TabControlPrime.SelectedIndex == 1)
+                {
+                    bool needShowTickState = !(_botsJournals.Count > 1);
+
+                    PaintStatTable(allSortPoses, longPositions, shortPositions, needShowTickState);
+                }
+                else if (TabControlPrime.SelectedIndex == 2)
+                {
+                    PaintDrawDown(allSortPoses);
+                }
+                else if (TabControlPrime.SelectedIndex == 3)
+                {
+                    PaintVolume(allSortPoses);
+                }
+                else if (TabControlPrime.SelectedIndex == 4)
+                {
+                    PaintOpenPositionGrid(allSortPoses);
+                }
+                else if (TabControlPrime.SelectedIndex == 5)
+                {
+                    PaintClosePositionGrid();
+                }
+
+                PaintTitleAbsProfit(allSortPoses);
+
             }
             catch (Exception error)
             {
@@ -478,7 +583,7 @@ namespace OsEngine.Journal
 
         private void PaintTitleAbsProfit(List<Position> positionsAll)
         {
-            decimal absProfit = PositionStatisticGenerator.GetAllProfitInAbsolute(positionsAll.ToArray());
+            decimal absProfit = PositionStatisticGenerator.GetAllProfitInAbsolute(positionsAll.ToArray(), false);
 
             if (absProfit != 0)
             {
@@ -496,8 +601,6 @@ namespace OsEngine.Journal
             }
 
         }
-
-        private string _paintLocker = "journalPainterLocker";
 
         private void ComboBoxChartType_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -542,10 +645,15 @@ namespace OsEngine.Journal
             }
         }
 
+        private int _countLoadBenchmark = 0;
+
         private void ComboBoxBenchmark_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             try
             {
+                _countLoadBenchmark = 0;
+                _checkBenchmarkData = false;
+
                 RePaint();
                 SaveSettings();
             }
@@ -587,8 +695,8 @@ namespace OsEngine.Journal
                 column0.CellTemplate = cell0;
                 column0.HeaderText = @"";
                 column0.ReadOnly = true;
-                column0.Width = 200;
-
+                column0.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                //column0.Width = 200;
                 _gridStatistics.Columns.Add(column0);
 
                 DataGridViewColumn column1 = new DataGridViewColumn();
@@ -672,9 +780,9 @@ namespace OsEngine.Journal
                     CreateTableToStatistic();
                 }
 
-                List<string> positionsAllState = PositionStatisticGenerator.GetStatisticNew(positionsAll);
-                List<string> positionsLongState = PositionStatisticGenerator.GetStatisticNew(positionsLong);
-                List<string> positionsShortState = PositionStatisticGenerator.GetStatisticNew(positionsShort);
+                List<string> positionsAllState = PositionStatisticGenerator.GetStatisticNew(positionsAll, true);
+                List<string> positionsLongState = PositionStatisticGenerator.GetStatisticNew(positionsLong, false);
+                List<string> positionsShortState = PositionStatisticGenerator.GetStatisticNew(positionsShort, false);
 
                 if (positionsAllState == null)
                 {
@@ -729,7 +837,7 @@ namespace OsEngine.Journal
 
         #region Equity chart
 
-        Chart _chartEquity;
+        private Chart _chartEquity;
 
         private void CreateChartProfit()
         {
@@ -979,6 +1087,8 @@ namespace OsEngine.Journal
 
         private int _lastSeriesEquityChartPointWithLabel = 0;
 
+        private decimal _startValuePortfolio;
+
         private void PaintProfitOnChart(List<Position> positionsAll)
         {
             try
@@ -1065,6 +1175,11 @@ namespace OsEngine.Journal
                     }
                     else if (chartType == "Percent 1 contract")
                     {
+                        if (positionsAll[i].NameBotClass == "TaxPayer"
+                         || positionsAll[i].NameBotClass == "PayOfMarginBot")
+                        {
+                            continue;
+                        }
                         curProfit = positionsAll[i].ProfitOperationPercent * (curMult / 100);
                     }
 
@@ -1171,6 +1286,51 @@ namespace OsEngine.Journal
                 _chartEquity.Series.Add(profitBar);
                 _chartEquity.Series.Add(nullLine);
 
+                if (chartType == "Absolute")
+                {
+                    ComboBoxBenchmark.IsEnabled = true;
+                }
+                else
+                {
+                    ComboBoxBenchmark.IsEnabled = false;
+                }
+
+                if (positionsAll.Count > 0
+                    && ComboBoxBenchmark.SelectedItem.ToString() != BenchmarkSecurity.Off.ToString() &&
+                    chartType == "Absolute")
+                {
+                    _startValuePortfolio = positionsAll[0].PortfolioValueOnOpenPosition;
+
+                    Series benchmarkLine = GetBenchmarkPoints(nullLine, maxYVal, minYval);
+
+                    if (benchmarkLine != null)
+                    {
+                        _chartEquity.Series.Add(benchmarkLine);
+
+                        if (_benchmark != null)
+                        {
+                            _benchmark.NewLogMessageEvent -= SendNewLogMessage;
+                            _benchmark.DownloadBenchmarkEvent -= Benchmark_DownloadBenchmarkEvent;
+                            _benchmark = null;
+                        }
+
+                        for (int i = 0; i < benchmarkLine.Points.Count; i++)
+                        {
+                            decimal benchmarkValue = (decimal)benchmarkLine.Points[i].YValues[0];
+
+                            if (benchmarkValue > maxYVal)
+                            {
+                                maxYVal = benchmarkValue;
+                            }
+
+                            if (benchmarkValue < minYval)
+                            {
+                                minYval = benchmarkValue;
+                            }
+                        }
+                    }
+                }
+
                 if (minYval != decimal.MaxValue &&
                     maxYVal != decimal.MinValue &&
                     minYval != maxYVal)
@@ -1212,6 +1372,183 @@ namespace OsEngine.Journal
             }
         }
 
+        private Benchmark _benchmark;
+        private bool _checkBenchmarkData = false;
+
+        private Series GetBenchmarkPoints(Series series, decimal maxYVal, decimal minYVal)
+        {
+            try
+            {
+                _benchmark = new Benchmark(ComboBoxBenchmark.SelectedItem.ToString());
+                _benchmark.NewLogMessageEvent += SendNewLogMessage;
+                _benchmark.DownloadBenchmarkEvent += Benchmark_DownloadBenchmarkEvent;
+
+                List<decimal> data = LoadBenchmarkData(series);
+
+                if (data == null && !_checkBenchmarkData)
+                {
+                    _checkBenchmarkData = true;
+                    _countLoadBenchmark++;
+
+                    _benchmark.GetData(series);
+                }
+                else
+                {
+                    return ScaleDataToChart(data, minYVal, maxYVal);
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return null;
+            }
+        }
+
+        private void Benchmark_DownloadBenchmarkEvent()
+        {
+            try
+            {
+                if (_benchmark != null)
+                {
+                    _benchmark.NewLogMessageEvent -= SendNewLogMessage;
+                    _benchmark.DownloadBenchmarkEvent -= Benchmark_DownloadBenchmarkEvent;
+                    _benchmark = null;
+                }
+
+                _checkBenchmarkData = false;
+
+                RePaint();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private List<decimal> LoadBenchmarkData(Series series)
+        {
+            try
+            {
+                if (!File.Exists(_benchmark.FileSetBenchmark))
+                {
+                    return null;
+                }
+
+                List<DateTime> listData = new();
+                Dictionary<DateTime, decimal> candleData = new();
+
+                string line;
+                using (StreamReader reader = new StreamReader(_benchmark.FileSetBenchmark))
+                {
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        string[] parts = line.Split(',');
+
+                        if (parts.Length >= 8)
+                        {
+                            string dateStr = parts[0];
+
+                            DateTime date = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
+                            DateTime dateTime = date.Date;
+
+                            listData.Add(dateTime);
+
+                            decimal lastValue = decimal.Parse(parts[5].Replace(".", ","));
+                            candleData[dateTime] = lastValue;
+                        }
+                    }
+                }
+
+                if (_countLoadBenchmark < 3)
+                {
+                    if (candleData == null || candleData.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    if (DateTime.Parse(series.Points[0].AxisLabel) < listData[0])
+                    {
+                        return null;
+                    }
+
+                    if (DateTime.Parse(series.Points[^1].AxisLabel).AddDays(-1).Date > listData[^1])
+                    {
+                        return null;
+                    }
+                }
+
+                List<decimal> data = new();
+
+                for (int i = 0; i < series.Points.Count; i++)
+                {
+                    DateTime dateTime = DateTime.Parse(series.Points[i].AxisLabel).Date;
+
+                    DateTime roundedDateTime = candleData.Keys
+                            .Where(date => date < dateTime)
+                            .OrderByDescending(date => date)
+                            .FirstOrDefault(candleData.Keys.Min());
+
+                    if (candleData.ContainsKey(roundedDateTime))
+                    {
+                        if (ComboBoxChartType.SelectedItem.ToString() == "Absolute")
+                        {
+                            data.Add(candleData[roundedDateTime]);
+                        }
+                    }
+                }
+
+                return data;
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+                return null;
+            }
+        }
+
+        private Series ScaleDataToChart(List<decimal> originalData, decimal chartMin, decimal chartMax)
+        {
+            try
+            {
+                if (originalData == null || originalData.Count == 0)
+                    return new Series();
+
+                Series benchmark = new Series("SeriesBenchmark");
+                benchmark.ChartType = SeriesChartType.Line;
+                benchmark.YAxisType = AxisType.Secondary;
+                benchmark.Color = Color.Green;
+                benchmark.LabelForeColor = Color.Green;
+                benchmark.ChartArea = "ChartAreaProfit";
+                benchmark.ShadowOffset = 2;
+                benchmark.BorderWidth = 2;
+
+                decimal startValue = originalData[0];
+
+                for (int i = 0; i < originalData.Count; i++)
+                {
+                    decimal scaledValue = 0;
+
+                    if (startValue != originalData[i])
+                    {
+                        decimal relativeGrowth = (originalData[i] - startValue) / startValue;
+                        scaledValue = _startValuePortfolio * relativeGrowth;
+                    }
+
+                    benchmark.Points.AddXY(i, scaledValue);
+                    benchmark.Points[^1].AxisLabel = originalData[i].ToString();
+                }
+
+                return benchmark;
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+                return null;
+            }
+        }
+
         private void PaintRectangleEqutyLines()
         {
             if (_visibleEquityLine)
@@ -1220,7 +1557,7 @@ namespace OsEngine.Journal
             }
             else
             {
-                RectangleEquity.Fill = Brushes.Gray;                
+                RectangleEquity.Fill = Brushes.Gray;
             }
 
             if (_visibleLongLine)
@@ -1229,7 +1566,7 @@ namespace OsEngine.Journal
             }
             else
             {
-                RectangleLong.Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(255, 0, 112, 149));                
+                RectangleLong.Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(255, 0, 112, 149));
             }
 
             if (_visibleShortLine)
@@ -1237,7 +1574,7 @@ namespace OsEngine.Journal
                 RectangleShort.Fill = Brushes.DarkOrange;
             }
             else
-            {                
+            {
                 RectangleShort.Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(255, 145, 80, 0));
             }
         }
@@ -1302,7 +1639,36 @@ namespace OsEngine.Journal
 
         #endregion
 
-        #region Volume Chart
+        #region Volume Tabs
+
+        private void PaintVolume(List<Position> positionsAll)
+        {
+            if (TabControlVolume.SelectedIndex == -1 ||
+                        TabControlVolume.SelectedIndex == 0)
+            {
+                PaintVolumeOnChart(positionsAll);
+            }
+            else if (TabControlVolume.SelectedIndex == 1)
+            {
+                PaintPortfolioOnChart(positionsAll);
+            }
+        }
+
+        private void TabControlVolume_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                RePaint();
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        #endregion
+
+        #region Volume Securities Chart
 
         private Chart _chartVolume;
 
@@ -1341,6 +1707,7 @@ namespace OsEngine.Journal
 
                 VolumeShowNumbers.SelectionChanged -= VolumeShowNumbers_SelectionChanged;
                 TabControlPrime.SelectionChanged -= TabControlPrime_SelectionChanged;
+                TabControlVolume.SelectionChanged -= TabControlVolume_SelectionChanged;
 
                 string lastSelectedValue = null;
 
@@ -1393,6 +1760,7 @@ namespace OsEngine.Journal
 
                 VolumeShowNumbers.SelectionChanged += VolumeShowNumbers_SelectionChanged;
                 TabControlPrime.SelectionChanged += TabControlPrime_SelectionChanged;
+                TabControlVolume.SelectionChanged += TabControlVolume_SelectionChanged;
             }
             catch (Exception error)
             {
@@ -1579,7 +1947,7 @@ namespace OsEngine.Journal
             try
             {
                 if (volume == null ||
-      volume.Count == 0)
+                    volume.Count == 0)
                 {
                     return;
                 }
@@ -1772,9 +2140,600 @@ namespace OsEngine.Journal
 
         #endregion
 
+        #region Volume to Portfolio
+
+        private Chart _chartPortfolio;
+
+        private DataGridView _gridLeveragePortfolio;
+
+        private TableLayoutPanel _layoutPanelPortfolio;
+
+        private void CreateChartPortfolio()
+        {
+            try
+            {
+                _chartPortfolio = new Chart();
+                _chartPortfolio.Series.Clear();
+                _chartPortfolio.ChartAreas.Clear();
+                _chartPortfolio.BackColor = Color.FromArgb(17, 18, 23);
+                _chartPortfolio.Dock = DockStyle.Fill;
+
+                ChartArea areaLinePortfolio = new ChartArea("ChartAreaPortfolio");
+                areaLinePortfolio.Position.Height = 70;
+                areaLinePortfolio.Position.Width = 100;
+                areaLinePortfolio.Position.Y = 0;
+                areaLinePortfolio.CursorX.IsUserSelectionEnabled = true;
+                areaLinePortfolio.CursorX.IsUserEnabled = true;
+                areaLinePortfolio.AxisX.LabelStyle.Angle = 0;
+
+                _chartPortfolio.ChartAreas.Add(areaLinePortfolio);
+
+                ChartArea areaLineLeverageBar = new ChartArea("ChartAreaPortfolioBar");
+                areaLineLeverageBar.AlignWithChartArea = "ChartAreaPortfolio";
+                areaLineLeverageBar.Position.Height = 30;
+                areaLineLeverageBar.Position.Width = 100;
+                areaLineLeverageBar.Position.Y = 70;
+                areaLineLeverageBar.AxisX.Enabled = AxisEnabled.False;
+                areaLineLeverageBar.CursorX.IsUserEnabled = true;
+
+                _chartPortfolio.ChartAreas.Add(areaLineLeverageBar);
+
+                for (int i = 0; i < _chartPortfolio.ChartAreas.Count; i++)
+                {
+                    _chartPortfolio.ChartAreas[i].BorderColor = Color.Black;
+                    _chartPortfolio.ChartAreas[i].BackColor = Color.FromArgb(17, 18, 23);
+                    _chartPortfolio.ChartAreas[i].CursorY.LineColor = Color.Gainsboro;
+                    _chartPortfolio.ChartAreas[i].CursorX.LineColor = Color.Black;
+                    _chartPortfolio.ChartAreas[i].AxisX.TitleForeColor = Color.Gainsboro;
+                    _chartPortfolio.ChartAreas[i].AxisY.TitleForeColor = Color.Gainsboro;
+
+                    foreach (var axe in _chartPortfolio.ChartAreas[i].Axes)
+                    {
+                        axe.LabelStyle.ForeColor = Color.Gainsboro;
+                    }
+                }
+
+                _chartPortfolio.MouseMove += _chartPortfolio_MouseMove;
+                _chartPortfolio.MouseWheel += _chartPortfolio_MouseWheel;
+
+                _gridLeveragePortfolio = DataGridFactory.GetDataGridView(DataGridViewSelectionMode.FullRowSelect, DataGridViewAutoSizeRowsMode.None);
+
+                _gridLeveragePortfolio.AllowUserToResizeRows = false;
+                _gridLeveragePortfolio.AllowUserToResizeColumns = true;
+                _gridLeveragePortfolio.ColumnCount = 2;
+                _gridLeveragePortfolio.RowCount = 0;
+                _gridLeveragePortfolio.Dock = DockStyle.Fill;
+                _gridLeveragePortfolio.ScrollBars = ScrollBars.Vertical;
+
+                foreach (DataGridViewColumn column in _gridLeveragePortfolio.Columns)
+                {
+                    column.SortMode = DataGridViewColumnSortMode.NotSortable;
+                    column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
+                    column.ReadOnly = true;
+                }
+
+                _gridLeveragePortfolio.Columns[0].HeaderText = OsLocalization.Journal.LeverageGridColumn0;
+                _gridLeveragePortfolio.Columns[1].HeaderText = OsLocalization.Journal.LeverageGridColumn1;
+
+                CustomDataGridViewCell cell0 = new CustomDataGridViewCell();
+                cell0.Style = _gridLeveragePortfolio.DefaultCellStyle;
+                cell0.AdvancedBorderStyle = new DataGridViewAdvancedBorderStyle
+                {
+                    Bottom = DataGridViewAdvancedCellBorderStyle.None,
+                    Top = DataGridViewAdvancedCellBorderStyle.None,
+                    Left = DataGridViewAdvancedCellBorderStyle.Inset,
+                    Right = DataGridViewAdvancedCellBorderStyle.Inset
+                };
+
+                _gridLeveragePortfolio.DataError += _gridLeveragePortfolio_DataError;
+
+                _layoutPanelPortfolio = new TableLayoutPanel();
+                _layoutPanelPortfolio.Dock = DockStyle.Fill;
+                _layoutPanelPortfolio.ColumnCount = 2;
+                _layoutPanelPortfolio.RowCount = 1;
+                _layoutPanelPortfolio.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 80));
+                _layoutPanelPortfolio.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+                _layoutPanelPortfolio.Controls.Add(_chartPortfolio, 0, 0);
+                _layoutPanelPortfolio.Controls.Add(_gridLeveragePortfolio, 1, 0);
+
+                HostVolumePortfolio.Child = _layoutPanelPortfolio;
+                HostVolumePortfolio.Child.Show();
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void _gridLeveragePortfolio_DataError(object sender, DataGridViewDataErrorEventArgs e)
+        {
+            ServerMaster.SendNewLogMessage(e.ToString(), Logging.LogMessageType.Error);
+        }
+
+        private void _chartPortfolio_MouseWheel(object sender, MouseEventArgs e)
+        {
+            try
+            {
+                if (_chartPortfolio.ChartAreas[0].AxisX.ScaleView.IsZoomed)
+                {
+                    _chartPortfolio.ChartAreas[0].AxisX.ScaleView.ZoomReset();
+                }
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void _chartPortfolio_MouseMove(object sender, MouseEventArgs e)
+        {
+            try
+            {
+                if (_chartPortfolio.Series == null
+                    || _chartPortfolio.Series.Count == 0)
+                {
+                    return;
+                }
+                if (_chartPortfolio.ChartAreas[0].AxisX.ScaleView.Size == double.NaN)
+                {
+                    return;
+                }
+
+                if (e.X == _lastMouseXValue)
+                {
+                    return;
+                }
+
+                _lastMouseXValue = e.X;
+
+                int curCountOfPoints = 0;
+
+                if (_chartPortfolio.ChartAreas[0].AxisX.ScaleView.IsZoomed)
+                {
+                    curCountOfPoints = Convert.ToInt32(_chartPortfolio.ChartAreas[0].AxisX.ScaleView.Size);
+                }
+                else
+                {
+                    curCountOfPoints = _chartPortfolio.Series[0].Points.Count;
+                }
+
+                double sizeArea = _chartPortfolio.ChartAreas[0].InnerPlotPosition.Size.Width;
+                double allSizeAbs = _chartPortfolio.Size.Width * (sizeArea / 100);
+
+                double onePointLen = allSizeAbs / curCountOfPoints;
+
+                double curMousePosAbs = e.X;
+
+                double curPointNum = curMousePosAbs / onePointLen - 1;
+
+                try
+                {
+                    if (Double.IsInfinity(curPointNum))
+                    {
+                        return;
+                    }
+
+                    curPointNum = Convert.ToDouble(Convert.ToInt32(curPointNum));
+                }
+                catch
+                {
+                    return;
+                }
+
+                int firstPoint = 0;
+
+                if (_chartPortfolio.ChartAreas[0].AxisX.ScaleView.IsZoomed)
+                {
+                    firstPoint = Convert.ToInt32(_chartPortfolio.ChartAreas[0].AxisX.ScaleView.Position);
+                    curPointNum = firstPoint + curPointNum;
+                }
+
+                if (_chartPortfolio.ChartAreas[0].CursorX.Position != curPointNum)
+                {
+                    _chartPortfolio.ChartAreas[0].CursorX.SetCursorPosition(curPointNum);
+                }
+                else
+                {
+                    return;
+                }
+
+                int numPointInt = Convert.ToInt32(curPointNum);
+
+                if (numPointInt <= 0)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < _chartPortfolio.Series.Count; i++)
+                {
+                    if (_chartPortfolio.Series[i].Points.Count > _lastSeriesEquityChartPointWithLabel)
+                    {
+                        _chartPortfolio.Series[i].Points[_lastSeriesEquityChartPointWithLabel].Label = "";
+                    }
+                    if (_chartPortfolio.Series[i].Points.Count > numPointInt)
+                    {
+                        _chartPortfolio.Series[i].Points[numPointInt].Label
+                        = _chartPortfolio.Series[i].Points[numPointInt].AxisLabel + "\n" + Math.Round(_chartPortfolio.Series[i].Points[numPointInt].YValues[0], 2);
+                    }
+                }
+
+                _lastSeriesEquityChartPointWithLabel = numPointInt;
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void PaintPortfolioOnChart(List<Position> positionsAll)
+        {
+            try
+            {
+                if (!GridTabPrime.Dispatcher.CheckAccess())
+                {
+                    GridTabPrime.Dispatcher.Invoke(
+                        new Action<List<Position>>(PaintPortfolioOnChart), positionsAll);
+                    return;
+                }
+
+                if (_chartPortfolio == null || _gridLeveragePortfolio == null)
+                {
+                    CreateChartPortfolio();
+                }
+
+                _chartPortfolio.Series.Clear();
+
+                if (positionsAll == null || positionsAll.Count == 0)
+                {
+                    return;
+                }
+
+                Series totalPortfolio = new Series("SeriesPortfolio");
+                totalPortfolio.ChartType = SeriesChartType.Line;
+                totalPortfolio.Color = Color.White;
+                totalPortfolio.LabelForeColor = Color.White;
+                totalPortfolio.YAxisType = AxisType.Secondary;
+                totalPortfolio.ChartArea = "ChartAreaPortfolio";
+                totalPortfolio.BorderWidth = 4;
+                totalPortfolio.ShadowOffset = 2;
+
+                Series volumePortfolio = new Series("SeriesVolumeToPortfolio");
+                volumePortfolio.ChartType = SeriesChartType.Line;
+                volumePortfolio.Color = Color.DeepSkyBlue;
+                volumePortfolio.LabelForeColor = Color.DeepSkyBlue;
+                volumePortfolio.YAxisType = AxisType.Secondary;
+                volumePortfolio.ChartArea = "ChartAreaPortfolio";
+                volumePortfolio.BorderWidth = 2;
+                volumePortfolio.ShadowOffset = 2;
+
+                Series leverageBars = new Series("SeriesLeverageBar");
+                leverageBars.ChartType = SeriesChartType.Column;
+                leverageBars.YAxisType = AxisType.Secondary;
+                leverageBars.LabelForeColor = Color.White;
+                leverageBars.ChartArea = "ChartAreaPortfolioBar";
+                leverageBars.ShadowOffset = 2;
+
+                List<DateTime> allChange = new List<DateTime>();
+
+                for (int i = 0; i < positionsAll.Count; i++)
+                {
+                    Position pos = positionsAll[i];
+                    DateTime timeCreate = pos.TimeCreate;
+                    DateTime timeClose = pos.TimeClose;
+
+                    if (allChange.FindIndex(chnge => chnge == timeCreate) == -1)
+                    {
+                        allChange.Add(timeCreate);
+                    }
+
+                    if (pos.State == PositionStateType.Done)
+                    {
+                        if (allChange.FindIndex(chnge => chnge == timeClose) == -1)
+                        {
+                            allChange.Add(timeClose);
+                        }
+                    }
+                }
+
+                allChange = allChange.OrderBy(x => x).ToList();
+
+                decimal[] values = new decimal[allChange.Count];
+                List<decimal> volume = new(values);
+                List<decimal> deposit = new(values);
+
+                SortedDictionary<decimal, TimeSpan> leverageList = new();
+
+                for (int i = 0; i < positionsAll.Count; i++)
+                {
+                    Position pos = positionsAll[i];
+
+                    if (pos.MaxVolume == 0)
+                    {
+                        continue;
+                    }
+
+                    DateTime timeCreate = pos.TimeCreate;
+                    DateTime timeClose = pos.TimeClose;
+
+                    int indexOpen = allChange.FindIndex(change => change == timeCreate);
+                    int indexClose = allChange.FindIndex(change => change == timeClose);
+
+                    if (indexOpen != -1)
+                    {
+                        decimal volumeInPos = pos.MaxVolume * pos.EntryPrice;
+
+                        if (pos.Direction == Side.Buy && pos.MarginBuy != 0)
+                        {
+                            volumeInPos = pos.MaxVolume * pos.MarginBuy;
+                        }
+                        if (pos.Direction == Side.Sell && pos.MarginSell != 0)
+                        {
+                            volumeInPos = pos.MaxVolume * pos.MarginSell;
+                        }
+
+                        if (pos.Lots != 0 && pos.Lots != 1)
+                        {
+                            volumeInPos = volumeInPos * pos.Lots;
+                        }
+
+                        volume[indexOpen] += volumeInPos;
+
+                        deposit[indexOpen] = pos.PortfolioValueOnOpenPosition;
+                    }
+
+                    if (pos.State == PositionStateType.Done
+                        && indexClose != -1)
+                    {
+                        decimal volumeInPos = pos.MaxVolume * pos.EntryPrice;
+
+                        if (pos.Direction == Side.Buy && pos.MarginBuy != 0)
+                        {
+                            volumeInPos = pos.MaxVolume * pos.MarginBuy;
+                        }
+                        if (pos.Direction == Side.Sell && pos.MarginSell != 0)
+                        {
+                            volumeInPos = pos.MaxVolume * pos.MarginSell;
+                        }
+
+                        if (pos.Lots != 0 && pos.Lots != 1)
+                        {
+                            volumeInPos = volumeInPos * pos.Lots;
+                        }
+
+                        volume[indexClose] -= volumeInPos;
+
+                        deposit[indexClose] = pos.PortfolioValueOnOpenPosition;
+                    }
+                }
+
+                List<decimal> volumeData = new();
+
+                for (int i = 0; i < volume.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        volumeData.Add(volumeData[^1] + volume[i]);
+                    }
+                    else
+                    {
+                        volumeData.Add(volume[i]);
+                    }
+                }
+
+                decimal maxVolume = 0;
+                decimal minVolume = decimal.MaxValue;
+
+                for (int i = 0; i < allChange.Count; i++)
+                {
+                    decimal totalDataPoint = Math.Round(deposit[i], 4);
+                    totalPortfolio.Points.AddXY(i, totalDataPoint);
+                    totalPortfolio.Points[^1].AxisLabel = allChange[i].ToString();
+
+                    decimal volumeDataPoint = Math.Round(volumeData[i], 4);
+                    volumePortfolio.Points.AddXY(i, volumeDataPoint);
+                    volumePortfolio.Points[^1].AxisLabel = allChange[i].ToString();
+
+                    decimal leverage = 0;
+
+                    if (totalDataPoint != 0)
+                    {
+                        leverage = Math.Round(volumeDataPoint / totalDataPoint, 2);
+                    }
+
+                    leverageBars.Points.AddXY(i, leverage);
+                    leverageBars.Points[^1].AxisLabel = allChange[i].ToString();
+
+                    leverageBars.Points[^1].Color = GetColorForLeverageLevel(leverageBars.Points[^1].YValues[0]);
+
+                    decimal leverageLevel = Math.Round(leverage, MidpointRounding.ToPositiveInfinity);
+
+                    if (leverage > 1 && leverage <= 1.5m)
+                    {
+                        leverageLevel = 1.5m;
+                    }
+                    else if (leverage > 1.5m && leverage <= 2)
+                    {
+                        leverageLevel = 2;
+                    }
+                    else if (leverage > 2 && leverage <= 2.5m)
+                    {
+                        leverageLevel = 2.5m;
+                    }
+                    else if (leverage > 2.5m && leverage <= 3)
+                    {
+                        leverageLevel = 3;
+                    }
+
+                    if (leverageLevel == 0)
+                    {
+                        leverageLevel = 1;
+                    }
+
+                    if (i < allChange.Count - 1)
+                    {
+                        if (leverageList.ContainsKey(leverageLevel))
+                        {
+                            leverageList[leverageLevel] += allChange[i + 1] - allChange[i];
+                        }
+                        else
+                        {
+                            leverageList[leverageLevel] = allChange[i + 1] - allChange[i];
+                        }
+                    }
+
+                    if (volumeData[i] > maxVolume)
+                    {
+                        maxVolume = volumeData[i];
+                    }
+                    if (volumeData[i] < minVolume)
+                    {
+                        minVolume = volumeData[i];
+                    }
+
+                    if (deposit[i] > maxVolume)
+                    {
+                        maxVolume = deposit[i];
+                    }
+                    if (deposit[i] < minVolume)
+                    {
+                        minVolume = deposit[i];
+                    }
+                }
+
+                if (minVolume != decimal.MaxValue &&
+                    maxVolume != 0 &&
+                    minVolume != maxVolume)
+                {
+                    double valueMax = Convert.ToDouble(maxVolume + (maxVolume * 0.05m));
+                    double valueMin = Convert.ToDouble(minVolume - (minVolume * 0.05m));
+
+                    valueMax = Math.Round(valueMax, 4);
+                    valueMin = Math.Round(valueMin, 4);
+
+                    if (valueMax > valueMin)
+                    {
+                        _chartPortfolio.ChartAreas["ChartAreaPortfolio"].AxisY2.Maximum = valueMax;
+                        _chartPortfolio.ChartAreas["ChartAreaPortfolio"].AxisY2.Minimum = valueMin;
+                        double interval = Convert.ToDouble(Math.Abs(maxVolume - minVolume) / 8);
+
+                        interval = Math.Round(interval, 4);
+
+                        _chartPortfolio.ChartAreas["ChartAreaPortfolio"].AxisY2.Interval = interval;
+
+                    }
+                }
+
+                _chartPortfolio.Series.Add(volumePortfolio);
+                _chartPortfolio.Series.Add(totalPortfolio);
+                _chartPortfolio.Series.Add(leverageBars);
+
+                AddDataToGridLeverage(leverageList);
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private Color GetColorForLeverageLevel(double value)
+        {
+            if (value < 1)
+            {
+                return Color.Green;
+            }
+            else if (value > 3)
+            {
+                return Color.Red;
+            }
+            else
+            {
+                return Color.Orange;
+            }
+        }
+
+        private void AddDataToGridLeverage(SortedDictionary<decimal, TimeSpan> leverageList)
+        {
+            try
+            {
+                if (!GridTabPrime.Dispatcher.CheckAccess())
+                {
+                    GridTabPrime.Dispatcher.Invoke(
+                        new Action<SortedDictionary<decimal, TimeSpan>>(AddDataToGridLeverage), leverageList);
+                    return;
+                }
+
+                if (leverageList == null || leverageList.Count == 0) return;
+
+                for (int i = 0; i < _gridLeveragePortfolio.RowCount; i++)
+                {
+                    _gridLeveragePortfolio.Rows.RemoveAt(i);
+                    i--;
+                }
+
+                int count = (int)leverageList.Keys.Max();
+
+                TimeSpan timeSpan = new TimeSpan(0);
+
+                foreach (var keys in leverageList)
+                {
+                    timeSpan += keys.Value;
+                }
+
+                for (int i = 0; i < leverageList.Count; i++)
+                {
+                    DataGridViewRow newRow = new DataGridViewRow();
+
+                    string value = $"{i - 1} - {i}";
+
+                    decimal key = leverageList.Keys.ElementAt(i);
+
+                    switch (leverageList.Keys.ElementAt(i))
+                    {
+                        case 1:
+                            value = "0 - 1";
+                            break;
+                        case 1.5m:
+                            value = "1 - 1.5";
+                            break;
+                        case 2:
+                            value = "1.5 - 2";
+                            break;
+                        case 2.5m:
+                            value = "2 - 2.5";
+                            break;
+                        case 3:
+                            value = "2.5 - 3";
+                            break;
+                    }
+
+                    newRow.Cells.Add(new DataGridViewTextBoxCell() { Value = value });
+
+                    if (leverageList.ContainsKey(key))
+                    {
+                        newRow.Cells.Add(new DataGridViewTextBoxCell() { Value = Math.Round(leverageList[key].TotalSeconds / timeSpan.TotalSeconds * 100, 2) + "%" });
+                    }
+                    else
+                    {
+                        newRow.Cells.Add(new DataGridViewTextBoxCell() { Value = "0%" });
+                    }
+
+                    newRow.DefaultCellStyle.ForeColor = GetColorForLeverageLevel((double)key - 0.1);
+                    newRow.DefaultCellStyle.SelectionForeColor = newRow.DefaultCellStyle.ForeColor;
+
+                    _gridLeveragePortfolio.Rows.Add(newRow);
+                }
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        #endregion
+
         #region Max DD Chart
 
-        Chart _chartDd;
+        private Chart _chartDd;
 
         private void CreateChartDrawDown()
         {
@@ -1794,6 +2753,8 @@ namespace OsEngine.Journal
                 areaDdPunct.Position.Y = 0;
                 areaDdPunct.CursorX.IsUserSelectionEnabled = false; //allow the user to change the view scope/ разрешаем пользователю изменять рамки представления
                 areaDdPunct.CursorX.IsUserEnabled = true; //trait/чертa
+                areaDdPunct.AxisY2.Title = OsLocalization.Journal.Label25;
+                areaDdPunct.AxisY2.TitleForeColor = Color.DeepSkyBlue;
 
                 _chartDd.ChartAreas.Add(areaDdPunct);
 
@@ -1804,6 +2765,8 @@ namespace OsEngine.Journal
                 areaDdPercent.Position.Y = 50;
                 areaDdPercent.AxisX.Enabled = AxisEnabled.False;
                 areaDdPercent.CursorX.IsUserEnabled = true; //trait/чертa
+                areaDdPercent.AxisY2.Title = OsLocalization.Journal.Label24;
+                areaDdPercent.AxisY2.TitleForeColor = Color.DarkOrange;
 
                 _chartDd.ChartAreas.Add(areaDdPercent);
 
@@ -2115,6 +3078,7 @@ namespace OsEngine.Journal
                 _openPositionGrid = CreateNewTable();
                 HostOpenPosition.Child = _openPositionGrid;
                 _openPositionGrid.Click += _openPositionGrid_Click;
+                _openPositionGrid.CellClick += _gridOpenDeal_CellClick;
                 _openPositionGrid.DoubleClick += _openPositionGrid_DoubleClick;
                 _openPositionGrid.DataError += _gridStatistics_DataError;
             }
@@ -2133,15 +3097,160 @@ namespace OsEngine.Journal
                     CreateOpenPositionTable();
                 }
 
+                int startNum = 0;
+                int endNum = 0;
+
+                if (ComboBoxOpenPosesShowNumbers.SelectedItem != null)
+                {
+                    string selectNum = ComboBoxOpenPosesShowNumbers.SelectedItem.ToString().Replace(" ", "");
+
+                    startNum = Convert.ToInt32(selectNum.Split('>')[0]);
+                    endNum = Convert.ToInt32(selectNum.Split('>')[1]);
+                }
+
                 List<Position> openPositions = new List<Position>();
 
-                for (int i = 0; i < positionsAll.Count; i++)
+                if (_sortModeOpenPoses == SortedMode.NumberPositionFromLessToMore)
                 {
-                    if (positionsAll[i].State != PositionStateType.Done &&
-                        positionsAll[i].State != PositionStateType.OpeningFail)
+                    for (int i = 0; i < positionsAll.Count; i++)
                     {
-                        openPositions.Add(positionsAll[i]);
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].Number <= pos.Number)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
                     }
+                }
+                else if (_sortModeOpenPoses == SortedMode.NumberPositionFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].Number >= pos.Number)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeOpenPoses == SortedMode.OpenTimeFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].TimeCreate >= pos.TimeCreate)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
+                    }
+                }
+
+                else if (_sortModeOpenPoses == SortedMode.OpenTimeFromLessToMore)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].TimeCreate <= pos.TimeCreate)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeOpenPoses == SortedMode.CloseTimeFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].TimeClose >= pos.TimeClose)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeOpenPoses == SortedMode.CloseTimeFromLessToMore)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State != PositionStateType.Done &&
+                        pos.State != PositionStateType.OpeningFail)
+                        {
+                            while (index < openPositions.Count && openPositions[index].TimeClose <= pos.TimeClose &&
+                                openPositions.Count < endNum)
+                            {
+                                index++;
+                            }
+
+                            openPositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeOpenPoses == SortedMode.SecurityNameFromMoreToLess)
+                {
+                    openPositions = positionsAll
+                        .Where(o => o.State != PositionStateType.Done && o.State != PositionStateType.OpeningFail)
+                        .OrderBy(o => o.SecurityName).ToList();
+                }
+                else if (_sortModeOpenPoses == SortedMode.SecurityNameFromLessToMore)
+                {
+                    openPositions = positionsAll
+                        .Where(o => o.State != PositionStateType.Done && o.State != PositionStateType.OpeningFail)
+                        .OrderBy(o => o.SecurityName).ToList();
+                    openPositions.Reverse();
+                }
+                else if (_sortModeOpenPoses == SortedMode.BotNameFromMoreToLess)
+                {
+                    openPositions = positionsAll
+                        .Where(o => o.State != PositionStateType.Done && o.State != PositionStateType.OpeningFail)
+                        .OrderBy(o => o.NameBot).ToList();
+                }
+                else if (_sortModeOpenPoses == SortedMode.BotNameFromLessToMore)
+                {
+                    openPositions = positionsAll
+                        .Where(o => o.State != PositionStateType.Done && o.State != PositionStateType.OpeningFail)
+                        .OrderBy(o => o.NameBot).ToList();
+                    openPositions.Reverse();
                 }
 
                 HostOpenPosition.Child = null;
@@ -2155,20 +3264,9 @@ namespace OsEngine.Journal
                     return;
                 }
 
-                int startNum = 0;
-                int endNum = openPositions.Count;
-
-                if (ComboBoxOpenPosesShowNumbers.SelectedItem != null)
-                {
-                    string selectNum = ComboBoxOpenPosesShowNumbers.SelectedItem.ToString().Replace(" ", "");
-
-                    startNum = Convert.ToInt32(selectNum.Split('>')[0]);
-                    endNum = Convert.ToInt32(selectNum.Split('>')[1]);
-                }
-
                 for (int i = startNum; i < endNum && i < openPositions.Count; i++)
                 {
-                    _openPositionGrid.Rows.Insert(0, GetRow(openPositions[i]));
+                    _openPositionGrid.Rows.Add(GetRow(openPositions[i]));
                 }
             }
             catch (Exception ex)
@@ -2323,6 +3421,129 @@ namespace OsEngine.Journal
             ShowPositionDialog(number);
         }
 
+        private SortedMode _sortModeOpenPoses;
+
+        private void _gridOpenDeal_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex != -1)
+                return;
+
+            DataGridView grid = sender as DataGridView;
+            if (grid == null) return;
+
+            UpdateGridSortMod(ref grid, e, ref _sortModeOpenPoses);
+            RePaint();
+        }
+
+        private void UpdateGridSortMod(ref DataGridView grid, DataGridViewCellEventArgs e, ref SortedMode sortMode)
+        {
+            if (grid.Columns[e.ColumnIndex] is DataGridViewButtonColumn)
+            {
+                string header = grid.Columns[e.ColumnIndex].HeaderText;
+
+                if (header == OsLocalization.Entity.PositionColumn1 || header == OsLocalization.Entity.PositionColumn1 + " ⌃")
+                {
+                    sortMode = SortedMode.NumberPositionFromMoreToLess;
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1 + " ⌄";
+
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn1 + " ⌄")
+                {
+                    sortMode = SortedMode.NumberPositionFromLessToMore;
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1 + " ⌃";
+
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn2 || header == OsLocalization.Entity.PositionColumn2 + " ⌃")
+                {
+                    sortMode = SortedMode.OpenTimeFromMoreToLess;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2 + " ⌄";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn2 + " ⌄")
+                {
+                    sortMode = SortedMode.OpenTimeFromLessToMore;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2 + " ⌃";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn3 || header == OsLocalization.Entity.PositionColumn3 + " ⌃")
+                {
+                    sortMode = SortedMode.CloseTimeFromMoreToLess;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3 + " ⌄";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn3 + " ⌄")
+                {
+                    sortMode = SortedMode.CloseTimeFromLessToMore;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3 + " ⌃";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn4 || header == OsLocalization.Entity.PositionColumn4 + " ⌃")
+                {
+                    sortMode = SortedMode.BotNameFromMoreToLess;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4 + " ⌄";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn4 + " ⌄")
+                {
+                    sortMode = SortedMode.BotNameFromLessToMore;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4 + " ⌃";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn5 || header == OsLocalization.Entity.PositionColumn5 + " ⌃")
+                {
+                    sortMode = SortedMode.SecurityNameFromMoreToLess;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5 + " ⌄";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                }
+                else if (header == OsLocalization.Entity.PositionColumn5 + " ⌄")
+                {
+                    sortMode = SortedMode.SecurityNameFromLessToMore;
+                    grid.Columns[4].HeaderText = OsLocalization.Entity.PositionColumn5 + " ⌃";
+
+                    grid.Columns[0].HeaderText = OsLocalization.Entity.PositionColumn1;
+                    grid.Columns[1].HeaderText = OsLocalization.Entity.PositionColumn2;
+                    grid.Columns[2].HeaderText = OsLocalization.Entity.PositionColumn3;
+                    grid.Columns[3].HeaderText = OsLocalization.Entity.PositionColumn4;
+                }
+            }
+        }
+
         private void _openPositionGrid_Click(object sender, EventArgs e)
         {
             try
@@ -2340,13 +3561,17 @@ namespace OsEngine.Journal
                 List<ToolStripMenuItem> items = new List<ToolStripMenuItem>();
 
                 items.Add(new ToolStripMenuItem { Text = OsLocalization.Journal.PositionMenuItem8 });
-                items[0].Click += OpenDealMoreInfo_Click;
+                items[^1].Click += OpenDealMoreInfo_Click;
 
                 items.Add(new ToolStripMenuItem { Text = OsLocalization.Journal.PositionMenuItem9 });
-                items[1].Click += OpenDealDelete_Click;
+                items[^1].Click += OpenDealDelete_Click;
 
                 items.Add(new ToolStripMenuItem { Text = OsLocalization.Journal.PositionMenuItem10 });
-                items[2].Click += OpenDealClearAll_Click;
+                items[^1].Click += OpenDealClearAll_Click;
+
+                items.Add(new ToolStripMenuItem { Text = OsLocalization.Journal.PositionMenuItem11 });
+                items[^1].Click += OpenDealSaveInFile_Click;
+
 
                 if (_botsJournals.Count != 0)
                 {
@@ -2369,6 +3594,81 @@ namespace OsEngine.Journal
 
                 _openPositionGrid.ContextMenuStrip = menu;
                 _openPositionGrid.ContextMenuStrip.Show(_openPositionGrid, new System.Drawing.Point(mouse.X, mouse.Y));
+            }
+            catch (Exception error)
+            {
+                SendNewLogMessage(error.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void OpenDealSaveInFile_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                SaveFileDialog myDialog = new SaveFileDialog();
+                myDialog.Filter = "*.txt|";
+                myDialog.ShowDialog();
+
+                if (string.IsNullOrEmpty(myDialog.FileName))
+                {
+                    System.Windows.Forms.MessageBox.Show(OsLocalization.Journal.Message1);
+                    return;
+                }
+
+                StringBuilder workSheet = new StringBuilder();
+                workSheet.Append(OsLocalization.Entity.PositionColumn1 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn2 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn3 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn4 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn5 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn6 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn7 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn8 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn9 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn10 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn11 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn12 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn13 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn14 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn15 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn16 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn17 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn18 + ";");
+                workSheet.Append(OsLocalization.Entity.PositionColumn19 + "\r\n");
+
+                for (int i = 0; i < _openPositionGrid.Rows.Count; i++)
+                {
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[0].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[1].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[2].Value + ";");
+
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[3].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[4].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[5].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[6].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[7].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[8].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[9].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[10].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[11].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[12].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[13].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[14].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[15].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[16].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[17].Value + ";");
+                    workSheet.Append(_openPositionGrid.Rows[i].Cells[18].Value + "\r\n");
+                }
+
+                string fileName = myDialog.FileName;
+                if (fileName.Split('.').Length == 1)
+                {
+                    fileName = fileName + ".txt";
+                }
+
+                StreamWriter writer = new StreamWriter(fileName);
+                writer.Write(workSheet);
+                writer.Close();
             }
             catch (Exception error)
             {
@@ -2601,6 +3901,7 @@ namespace OsEngine.Journal
                 _closePositionGrid = CreateNewTable();
                 HostClosePosition.Child = _closePositionGrid;
                 _closePositionGrid.Click += _closePositionGrid_Click;
+                _closePositionGrid.CellClick += _gridCloseDeal_CellClick;
                 _closePositionGrid.DoubleClick += _closePositionGrid_DoubleClick;
                 _closePositionGrid.DataError += _gridStatistics_DataError;
             }
@@ -2614,7 +3915,6 @@ namespace OsEngine.Journal
         {
             try
             {
-
                 if (_closePositionGrid == null)
                 {
                     CreateClosePositionTable();
@@ -2636,7 +3936,150 @@ namespace OsEngine.Journal
                 int startNum = Convert.ToInt32(selectNums.Split('>')[0]);
                 int endNum = Convert.ToInt32(selectNums.Split('>')[1]);
 
-                List<Position> closePositions = GetClosePositions();
+                List<Position> positionsAll = GetClosePositions();
+                List<Position> closePositions = new List<Position>();
+
+                if (_sortModeClosePoses == SortedMode.NumberPositionFromLessToMore)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                        pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].Number <= pos.Number)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.NumberPositionFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                        pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].Number >= pos.Number)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.OpenTimeFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                        pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].TimeCreate >= pos.TimeCreate)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.OpenTimeFromLessToMore)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                         pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].TimeCreate <= pos.TimeCreate)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.CloseTimeFromMoreToLess)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                        pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].TimeClose >= pos.TimeClose)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.CloseTimeFromLessToMore)
+                {
+                    for (int i = 0; i < positionsAll.Count; i++)
+                    {
+                        Position pos = positionsAll[i];
+                        int index = 0;
+
+                        if (pos.State == PositionStateType.Done ||
+                        pos.State == PositionStateType.OpeningFail)
+                        {
+                            while (index < closePositions.Count && closePositions[index].TimeClose <= pos.TimeClose &&
+                                closePositions.Count < endNum)
+                            {
+                                index++;
+                            }
+
+                            closePositions.Insert(index, pos);
+                        }
+                    }
+                }
+                else if (_sortModeClosePoses == SortedMode.SecurityNameFromMoreToLess)
+                {
+                    closePositions = positionsAll
+                        .Where(o => o.State == PositionStateType.Done && o.State == PositionStateType.OpeningFail)
+                        .OrderBy(o => o.SecurityName).ToList();
+                }
+                else if (_sortModeClosePoses == SortedMode.SecurityNameFromLessToMore)
+                {
+                    closePositions = positionsAll
+                        .Where(o => o.State == PositionStateType.Done && o.State == PositionStateType.OpeningFail)
+                        .OrderBy(o => o.SecurityName).ToList();
+                    closePositions.Reverse();
+                }
+                else if (_sortModeClosePoses == SortedMode.BotNameFromMoreToLess)
+                {
+                    closePositions = positionsAll
+                        .Where(o => o.State == PositionStateType.Done && o.State == PositionStateType.OpeningFail)
+                        .OrderBy(o => o.NameBot).ToList();
+                }
+                else if (_sortModeClosePoses == SortedMode.BotNameFromLessToMore)
+                {
+                    closePositions = positionsAll
+                        .Where(o => o.State == PositionStateType.Done && o.State == PositionStateType.OpeningFail)
+                        .OrderBy(o => o.NameBot).ToList();
+                    closePositions.Reverse();
+                }
 
                 if (closePositions == null ||
                     closePositions.Count == 0)
@@ -2649,7 +4092,7 @@ namespace OsEngine.Journal
 
                 for (int i = startNum; i < endNum + 1 && i < closePositions.Count; i++)
                 {
-                    rows.Insert(0, GetRow(closePositions[i]));
+                    rows.Add(GetRow(closePositions[i]));
                 }
 
                 if (rows.Count > 0)
@@ -2664,6 +4107,7 @@ namespace OsEngine.Journal
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
+
             HostClosePosition.Child = _openPositionGrid;
         }
 
@@ -2806,6 +4250,20 @@ namespace OsEngine.Journal
             {
                 SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
+        }
+
+        private SortedMode _sortModeClosePoses;
+
+        private void _gridCloseDeal_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex != -1)
+                return;
+
+            DataGridView grid = sender as DataGridView;
+            if (grid == null) return;
+
+            UpdateGridSortMod(ref grid, e, ref _sortModeClosePoses);
+            RePaint();
         }
 
         private void _closePositionGrid_Click(object sender, EventArgs e)
@@ -3270,7 +4728,7 @@ namespace OsEngine.Journal
                         ComboBoxChartType.SelectedItem = profitType;
                     }
 
-                    if(reader.EndOfStream == true)
+                    if (reader.EndOfStream == true)
                     {
                         return;
                     }
@@ -3467,6 +4925,11 @@ namespace OsEngine.Journal
             try
             {
                 List<Journal> journals = new List<Journal>();
+
+                if (_botsJournals == null)
+                {
+                    return null;
+                }
 
                 for (int i = 0; i < _botsJournals.Count; i++)
                 {
@@ -4056,16 +5519,53 @@ namespace OsEngine.Journal
 
         private List<SecurityToPaint> GetAllSecuritiesToPaint()
         {
+            List<Journal> myJournals = new List<Journal>();
+
+            for (int i = 0; _botsJournals != null && i < _botsJournals.Count; i++)
+            {
+                BotPanelJournal panel = _botsJournals[i];
+
+                for (int i2 = 0; i2 < panel._Tabs.Count; i2++)
+                {
+                    myJournals.Add(panel._Tabs[i2].Journal);
+                }
+            }
+
+            if (myJournals == null
+                || myJournals.Count == 0)
+            {
+                return new List<SecurityToPaint>();
+            }
+
+            List<Position> positionsAll = new List<Position>();
+
+            for (int i = 0; i < myJournals.Count; i++)
+            {
+                if (myJournals[i].AllPosition != null)
+                {
+                    positionsAll.AddRange(myJournals[i].AllPosition);
+                }
+            }
+
+            for (int i = 0; i < positionsAll.Count; i++)
+            {
+                if (positionsAll[i] == null)
+                {
+                    positionsAll.RemoveAt(i);
+                    i--;
+                }
+            }
+
             List<SecurityToPaint> securities = new List<SecurityToPaint>();
 
-            if (_allPositions == null)
+            if (positionsAll == null)
             {
                 return securities;
             }
 
-            for (int i = 0; i < _allPositions.Count; i++)
+            for (int i = 0; i < positionsAll.Count; i++)
             {
-                Position position = _allPositions[i];
+                Position position = positionsAll[i];
 
                 string secName = position.SecurityName;
 
@@ -4594,6 +6094,65 @@ namespace OsEngine.Journal
         public event Action<string, LogMessageType> LogMessageEvent;
 
         #endregion
+
+        #region Posts collection
+
+        private InstructionsUi _instructionsUi;
+
+        private void ButtonPostsJournal2_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_instructionsUi == null)
+                {
+                    _instructionsUi = new InstructionsUi(
+                        InteractiveInstructions.Journal2Posts.AllInstructionsInClass, InteractiveInstructions.Journal2Posts.AllInstructionsInClassDescription);
+                    _instructionsUi.Show();
+                    _instructionsUi.Closed += _instructionsUi_Closed;
+                }
+                else
+                {
+                    if (_instructionsUi.WindowState == WindowState.Minimized)
+                    {
+                        _instructionsUi.WindowState = WindowState.Normal;
+                    }
+                    _instructionsUi.Activate();
+                }
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        private void _instructionsUi_Closed(object sender, EventArgs e)
+        {
+            try
+            {
+                _instructionsUi.Closed -= _instructionsUi_Closed;
+                _instructionsUi = null;
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        #endregion
+    }
+
+    public enum SortedMode
+    {
+        NumberPositionFromMoreToLess,
+        NumberPositionFromLessToMore,
+        OpenTimeFromMoreToLess,
+        OpenTimeFromLessToMore,
+        CloseTimeFromMoreToLess,
+        CloseTimeFromLessToMore,
+        BotNameFromMoreToLess,
+        BotNameFromLessToMore,
+        SecurityNameFromMoreToLess,
+        SecurityNameFromLessToMore
     }
 
     public class BotTabJournal

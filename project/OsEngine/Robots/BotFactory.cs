@@ -98,6 +98,11 @@ namespace OsEngine.Robots
                 }
                 catch (Exception e)
                 {
+                    if(isScript == true)
+                    {
+                       return GetStrategyForName(nameClass, nameInstance, startProgram, false);
+                    }
+                  
                     MessageBox.Show($"BotFactory. Script compilation/instantiation error for '{nameClass}': {e.ToString()}");
                     return null;
                 }
@@ -753,6 +758,13 @@ namespace OsEngine.Robots
             for (int i = args.ThreadIndex; i < args.AllBotNames.Count; i += args.TotalThreads)
             {
                 string botNameClass = args.AllBotNames[i];
+
+                if(botNameClass == "PayOfMarginBot"
+                    || botNameClass == "TaxPayer")
+                {
+                    continue;
+                }
+
                 BotPanel bot = null;
                 try
                 {

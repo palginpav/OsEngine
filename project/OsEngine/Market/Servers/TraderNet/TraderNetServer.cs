@@ -1,19 +1,25 @@
-﻿using Newtonsoft.Json;
+﻿/*
+ * Your rights to use code governed by this license https://github.com/AlexWan/OsEngine/blob/master/LICENSE
+ * Ваши права на использование кода регулируются данной лицензией http://o-s-a.net/doc/license_simple_engine.pdf
+*/
+
+using Newtonsoft.Json;
 using OsEngine.Entity;
+using OsEngine.Entity.WebSocketOsEngine;
 using OsEngine.Language;
 using OsEngine.Logging;
-using OsEngine.Market.Servers.TraderNet.Entity;
 using OsEngine.Market.Servers.Entity;
+using OsEngine.Market.Servers.TraderNet.Entity;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
-using OsEngine.Entity.WebSocketOsEngine;
-using System.Collections;
 
 namespace OsEngine.Market.Servers.TraderNet
 {
@@ -26,6 +32,7 @@ namespace OsEngine.Market.Servers.TraderNet
 
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
+            CreateParameterEnum(OsLocalization.ConvertToLocString("Eng:Portfolio currency_Ru:Валюта портфеля_"), "RUR", new List<string> { "RUR", "USD" });
         }
     }
 
@@ -38,15 +45,19 @@ namespace OsEngine.Market.Servers.TraderNet
             ServerStatus = ServerConnectStatus.Disconnect;
 
             Thread threadMessageReader = new Thread(MessageReader);
-            threadMessageReader.IsBackground = true;
             threadMessageReader.Name = "MessageReader";
             threadMessageReader.Start();
+
+            Thread threadUpdateSubscribe = new Thread(ThreadUpdatePortfolio);
+            threadUpdateSubscribe.Name = "ThreadUpdatePortfolio";
+            threadUpdateSubscribe.Start();
         }
 
         public void Connect(WebProxy proxy)
         {
             _publicKey = ((ServerParameterString)ServerParameters[0]).Value;
             _secretKey = ((ServerParameterPassword)ServerParameters[1]).Value;
+            _portfolioCurrency = ((ServerParameterEnum)ServerParameters[2]).Value;
 
             if (string.IsNullOrEmpty(_publicKey) ||
                 string.IsNullOrEmpty(_secretKey))
@@ -70,7 +81,7 @@ namespace OsEngine.Market.Servers.TraderNet
 
                 if (responseMessage.StatusCode == HttpStatusCode.OK)
                 {
-                    _FIFOListWebSocketMessage = new ConcurrentQueue<string>();
+
                     CreateWebSocketConnection();
                 }
                 else
@@ -112,7 +123,9 @@ namespace OsEngine.Market.Servers.TraderNet
                 SendLogMessage(exception.ToString(), LogMessageType.Error);
             }
 
-            _FIFOListWebSocketMessage = null;
+            _FIFOListWebSocketMessage = new ConcurrentQueue<string>();
+            _boolSetPortfolioValueBegin = true;
+            _portfolioIsStarted = true;
 
             if (ServerStatus != ServerConnectStatus.Disconnect)
             {
@@ -134,6 +147,10 @@ namespace OsEngine.Market.Servers.TraderNet
 
         public event Action DisconnectEvent;
 
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
+
         #endregion
 
         #region 2 Properties
@@ -146,18 +163,20 @@ namespace OsEngine.Market.Servers.TraderNet
 
         private string _secretKey;
 
-        private string _sid;              
+        private string _sid;
 
         private Dictionary<string, List<ListMdTiker>> _listMD = new Dictionary<string, List<ListMdTiker>>();
 
         private Dictionary<string, ListTrades> _listTrades = new Dictionary<string, ListTrades>();
+
+        private string _portfolioCurrency;
 
         #endregion
 
         #region 3 Securities
 
         public void GetSecurities()
-        {           
+        {
             GetSecuritiesFromExchange();
         }
 
@@ -165,6 +184,11 @@ namespace OsEngine.Market.Servers.TraderNet
         {
             try
             {
+                if (_securities == null)
+                {
+                    _securities = new List<Security>();
+                }
+
                 List<string> listSecurities = GetSecList(_sid);
 
                 if (listSecurities == null)
@@ -192,17 +216,24 @@ namespace OsEngine.Market.Servers.TraderNet
                         strListSec += ", ";
                     }
                 }
+
+                if (_securities != null)
+                {
+                    SecurityEvent(_securities);
+                }
             }
             catch (Exception ex)
             {
                 SendLogMessage(ex.ToString(), LogMessageType.Error);
-            }       
+            }
         }
 
         private List<string> GetSecList(string sid)
         {
             try
             {
+                _rateGateSecurity.WaitToProceed();
+
                 Dictionary<string, dynamic> data = new Dictionary<string, dynamic>();
 
                 data.Add("cmd", "getUserStockLists");
@@ -249,13 +280,13 @@ namespace OsEngine.Market.Servers.TraderNet
             }
         }
 
-        private RateGate _rateGateSecurity = new RateGate(6, TimeSpan.FromMilliseconds(60000));
+        private RateGate _rateGateSecurity = new RateGate(1, TimeSpan.FromMilliseconds(200));
 
         private void GetQuerySecurities(string strListSec)
         {
             try
             {
-                _rateGateSecurity.WaitToProceed(100);
+                _rateGateSecurity.WaitToProceed();
 
                 RequestSecurity reqData = new RequestSecurity();
                 reqData.q = new RequestSecurity.Q();
@@ -263,7 +294,7 @@ namespace OsEngine.Market.Servers.TraderNet
                 reqData.q.@params = new RequestSecurity.Params();
                 reqData.q.@params.take = 50;
                 reqData.q.@params.filter = new RequestSecurity.Filter();
-                reqData.q.@params.filter.filters = new List<RequestSecurity.FilterItem>();                
+                reqData.q.@params.filter.filters = new List<RequestSecurity.FilterItem>();
                 reqData.q.@params.filter.filters.Add(new RequestSecurity.FilterItem());
                 reqData.q.@params.filter.filters[0].field = "ticker";
                 reqData.q.@params.filter.filters[0].@operator = "in";
@@ -288,14 +319,12 @@ namespace OsEngine.Market.Servers.TraderNet
             {
                 ResponseMessageSecurities result = JsonConvert.DeserializeObject<ResponseMessageSecurities>(jsonResponse);
 
-                _securities = new List<Security>();
-
                 if (result == null)
                 {
                     return;
                 }
 
-                if (result.securities.Count == 0)
+                if (result.securities == null)
                 {
                     return;
                 }
@@ -308,23 +337,22 @@ namespace OsEngine.Market.Servers.TraderNet
 
                     newSecurity.Exchange = ServerType.TraderNet.ToString();
                     newSecurity.DecimalsVolume = item.lot_size_q.DecimalsCount();
-                    newSecurity.Lot = item.lot_size_q.ToDecimal();
                     newSecurity.Name = item.ticker;
                     newSecurity.NameFull = item.ticker;
                     newSecurity.NameId = item.instr_id;
                     newSecurity.SecurityType = GetSecurityType(Convert.ToInt32(item.instr_type_c));
                     newSecurity.NameClass = $"{item.mkt_short_code}_{newSecurity.SecurityType}";
                     newSecurity.Decimals = item.min_step.DecimalsCount();
-                    newSecurity.PriceStep = item.step_price.ToDecimal();
+                    newSecurity.PriceStep = item.min_step.ToDecimal();
                     newSecurity.PriceStepCost = newSecurity.PriceStep;
                     newSecurity.State = SecurityStateType.Activ;
-                    newSecurity.MinTradeAmount = item.quotes.x_lot.ToDecimal();
+                    newSecurity.MinTradeAmount = 1;
                     newSecurity.MinTradeAmountType = MinTradeAmountType.Contract;
-                    newSecurity.VolumeStep = item.quotes.x_lot.ToDecimal();
+                    newSecurity.VolumeStep = 1;
+                    newSecurity.Lot = Math.Round(item.lot_size_q.ToDecimal(), newSecurity.DecimalsVolume);
 
                     _securities.Add(newSecurity);
                 }
-                SecurityEvent(_securities);
             }
             catch (Exception ex)
             {
@@ -332,11 +360,11 @@ namespace OsEngine.Market.Servers.TraderNet
             }
         }
 
-        private SecurityType GetSecurityType(int code)
+        private SecurityType GetSecurityType(int type)
         {
             SecurityType _securityType = SecurityType.None;
 
-            switch (code)
+            switch (type)
             {
                 case (1):
                     _securityType = SecurityType.Stock;
@@ -371,9 +399,163 @@ namespace OsEngine.Market.Servers.TraderNet
 
         public void GetPortfolios()
         {
+
         }
-              
-        private bool _portfolioIsStarted = false;
+
+        private void ThreadUpdatePortfolio()
+        {
+            while (true)
+            {
+                try
+                {
+                    Thread.Sleep(5000);
+
+                    if (IsCompletelyDeleted == true)
+                    {
+                        return;
+                    }
+
+                    if (ServerStatus == ServerConnectStatus.Disconnect)
+                    {
+                        continue;
+                    }
+
+                    UpdatePortfolio();
+                }
+                catch (Exception exception)
+                {
+                    SendLogMessage(exception.ToString(), LogMessageType.Error);
+                }
+            }
+        }
+
+        private void UpdatePortfolio()
+        {
+            try
+            {
+                RequestSecurity reqData = new RequestSecurity();
+                reqData.q = new RequestSecurity.Q();
+                reqData.q.cmd = "getPositionJson";
+                reqData.q.@params = new RequestSecurity.Params();
+
+                HttpResponseMessage responseMessage = CreateQuery("/api/", "POST", null, reqData);
+
+                if (responseMessage == null
+                    || responseMessage.ToString().StartsWith("<")
+                    || responseMessage.ToString().Contains("<!DOCTYPE"))
+                {
+                    return;
+                }
+
+                string jsonResponse = responseMessage.Content.ReadAsStringAsync().Result;
+
+                if (jsonResponse != null)
+                {
+                    RestResponsePortfolio response = JsonConvert.DeserializeObject<RestResponsePortfolio>(jsonResponse);
+
+                    if (response == null)
+                    {
+                        return;
+                    }
+
+                    if (response.result == null)
+                    {
+                        return;
+                    }
+
+                    decimal valueCurrent = 0;
+
+                    List<AccRest> accRests = response.result.ps.acc;
+
+                    decimal kurs = 0;
+
+                    if (_portfolioCurrency == "USD")
+                    {
+                        int index = accRests.FindIndex(x => x.curr == "USD");
+
+                        if (index != -1)
+                        {
+                            decimal.TryParse(accRests[index].currval, NumberStyles.Any, CultureInfo.InvariantCulture, out kurs);
+                        }
+                    }
+
+                    for (int i = 0; i < accRests.Count; i++)
+                    {
+                        decimal.TryParse(accRests[i].s, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal balance);
+                        decimal.TryParse(accRests[i].currval, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal currval);
+
+                        valueCurrent += balance * currval;
+                    }
+
+                    List<PosRest> posRest = response.result.ps.pos;
+
+                    if (posRest.Count > 0)
+                    {
+                        for (int i = 0; i < posRest.Count; i++)
+                        {
+                            decimal.TryParse(posRest[i].market_value, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal market_value);
+                            decimal.TryParse(posRest[i].currval, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal currval);
+
+                            valueCurrent += market_value * currval;
+                        }
+                    }
+
+                    if (_portfolioCurrency == "USD" && kurs != 0)
+                    {
+                        valueCurrent = valueCurrent / kurs;
+                    }
+
+                    _portfolioValueCurrent = Math.Round(valueCurrent, 2);
+
+                    Portfolio portfolio = new Portfolio();
+                    portfolio.Number = "TraderNet";
+                    portfolio.ValueCurrent = _portfolioValueCurrent;
+
+                    if (_boolSetPortfolioValueBegin)
+                    {
+                        _boolSetPortfolioValueBegin = false;
+                        _portfolioValueBegin = portfolio.ValueCurrent;
+                    }
+
+                    portfolio.ValueBegin = _portfolioValueBegin;
+
+                    if (accRests.Count > 0)
+                    {
+                        for (int i = 0; i < accRests.Count; i++)
+                        {
+                            PositionOnBoard pos = new PositionOnBoard();
+
+                            pos.PortfolioName = "TraderNet";
+                            pos.SecurityNameCode = accRests[i].curr;
+                            pos.ValueBlocked = 0;
+                            pos.ValueCurrent = accRests[i].s.ToDecimal();
+
+                            if (_portfolioIsStarted)
+                            {
+                                pos.ValueBegin = pos.ValueCurrent;
+                                _portfolioIsStarted = false;
+                            }
+
+                            portfolio.SetNewPosition(pos);
+                        }
+                    }
+
+                    PortfolioEvent?.Invoke(new List<Portfolio> { portfolio });
+                }
+            }
+            catch (Exception exception)
+            {
+                SendLogMessage(exception.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private bool _boolSetPortfolioValueBegin = true;
+
+        private decimal _portfolioValueBegin;
+
+        private decimal _portfolioValueCurrent;
+
+        private bool _portfolioIsStarted = true;
 
         public event Action<List<Portfolio>> PortfolioEvent;
 
@@ -399,12 +581,19 @@ namespace OsEngine.Market.Servers.TraderNet
 
         private List<Candle> GetCandleData(Security security, TimeFrameBuilder timeFrameBuilder, DateTime startTime, DateTime endTime, DateTime actualTime)
         {
+            if (ServerStatus == ServerConnectStatus.Disconnect)
+            {
+                return null;
+            }
+
             if (!CheckTime(startTime, endTime, actualTime))
             {
                 return null;
             }
 
             int tfTotalMinutes = (int)timeFrameBuilder.TimeFrameTimeSpan.TotalMinutes;
+
+            int CountCandlesNeedToLoad = GetCountCandlesFromTimeInterval(startTime, endTime, timeFrameBuilder.TimeFrameTimeSpan);
 
             if (!CheckTf(tfTotalMinutes))
             {
@@ -413,65 +602,88 @@ namespace OsEngine.Market.Servers.TraderNet
 
             List<Candle> allCandles = new List<Candle>();
 
-            DateTime startTimeReq = startTime;
-            DateTime endTimeReq = startTimeReq.AddMinutes(tfTotalMinutes * 100000);
+            int needTf = 0;
 
-            if (endTimeReq > endTime)
+            int limit = CountCandlesNeedToLoad;
+
+            if (CountCandlesNeedToLoad > 10000)
             {
-                endTimeReq = endTime;
+                limit = 10000;
+            }
+
+
+            if (tfTotalMinutes == 30)
+            {
+                limit = limit * 2;
+                tfTotalMinutes = 15;
+                needTf = 30;
+            }
+
+            if (tfTotalMinutes == 10)
+            {
+                limit = limit * 2;
+                tfTotalMinutes = 5;
+                needTf = 10;
+            }
+
+            DateTime startTimeData = startTime;
+            DateTime endTimeData = startTimeData.AddMinutes(tfTotalMinutes * limit);
+
+            if (endTimeData > endTime)
+            {
+                endTimeData = endTime;
             }
 
             do
             {
-                List<Candle> candles = RequestCandleHistory(security, tfTotalMinutes, startTimeReq, endTimeReq);
+                List<Candle> candles = RequestCandleHistoryWithRetries(security, tfTotalMinutes, startTimeData, endTimeData, 20);
 
                 if (candles == null)
                 {
-                    return null;
+                    break;
                 }
 
-                if (allCandles.Count == 0)
-                {
-                    allCandles.AddRange(candles);
-                }
-
-                if (candles.Count == 1 &&
-                    allCandles[allCandles.Count - 1].TimeStart == candles[0].TimeStart)
+                if (candles == null || candles.Count == 0)
                 {
                     break;
                 }
 
-                while (true)
-                {
-                    if (candles.Count == 0)
-                    {
-                        break;
-                    }
+                Candle last = candles[candles.Count - 1];
 
-                    if (candles[0].TimeStart <= allCandles[allCandles.Count - 1].TimeStart)
+                if (allCandles.Count > 0)
+                {
+                    if (allCandles[allCandles.Count - 1].TimeStart == candles[0].TimeStart)
                     {
                         candles.RemoveAt(0);
                     }
-                    else
-                    {
-                        allCandles.AddRange(candles);
-                        break;
-                    }
                 }
 
-                if (allCandles[allCandles.Count - 1].TimeStart < endTime)
+                if (last.TimeStart >= endTime)
+
                 {
-                    startTimeReq = TimeZoneInfo.ConvertTimeFromUtc(allCandles[allCandles.Count - 1].TimeStart, TimeZoneInfo.Local);
-                    endTimeReq = startTimeReq.AddMinutes(tfTotalMinutes * 100000);
-
-                    if (endTimeReq > endTime)
+                    for (int i = 0; i < candles.Count; i++)
                     {
-                        endTimeReq = endTime;
+                        if (candles[i].TimeStart <= endTime)
+                        {
+                            allCandles.Add(candles[i]);
+                        }
                     }
+                    break;
                 }
-                else
+
+                allCandles.AddRange(candles);
+
+                startTimeData = endTimeData;
+                endTimeData = startTimeData.AddMinutes(tfTotalMinutes * limit);
+
+                if (startTimeData >= endTime)
                 {
                     break;
+                }
+
+                if (endTimeData > endTime)
+                {
+                    endTimeData = endTime;
                 }
 
             } while (true);
@@ -484,7 +696,137 @@ namespace OsEngine.Market.Servers.TraderNet
                 }
             }
 
+            if (allCandles.Count > 1)
+            {
+                for (int i = 0; i < allCandles.Count; i++)
+                {
+                    if (allCandles[i].TimeStart.Date > endTime)
+                    {
+                        allCandles.RemoveAt(i);
+                        i--;
+                    }
+                }
+            }
+
+            if (needTf > 0)
+            {
+                return BuildCandles(allCandles, needTf, tfTotalMinutes);
+            }
+
             return allCandles;
+        }
+
+        private List<Candle> RequestCandleHistoryWithRetries(Security security, int tfMinutes, DateTime fromTime, DateTime toTime, int retries)
+        {
+            List<Candle> result = null;
+            for (int i = 0; i < retries; i++)
+            {
+                result = RequestCandleHistory(security, tfMinutes, fromTime, toTime);
+
+                if (result != null)
+                {
+                    break;
+                }
+
+                Thread.Sleep(1000);
+            }
+            return result;
+        }
+
+        private List<Candle> BuildCandles(List<Candle> oldCandles, int needTf, int oldTf)
+        {
+            if (oldCandles == null)
+            {
+                return null;
+            }
+
+            List<Candle> newCandles = new List<Candle>();
+
+            int index = oldCandles.FindIndex(can => can.TimeStart.Minute % needTf == 0);
+
+            if (index == -1)
+            {
+                return null;
+            }
+
+            int count = needTf / oldTf;
+
+            Candle newCandle = new Candle();
+
+            for (int i = index; i < oldCandles.Count; i++)
+            {
+                if (oldCandles[i].TimeStart.Minute % needTf == 0)
+                {
+                    newCandle = new Candle();
+                    newCandle.TimeStart = oldCandles[i].TimeStart;
+                    newCandle.Open = oldCandles[i].Open;
+                    newCandle.High = oldCandles[i].High;
+                    newCandle.Low = oldCandles[i].Low;
+                    newCandle.Close = oldCandles[i].Close;
+                    newCandle.Volume = oldCandles[i].Volume;
+                    newCandle.State = CandleState.Finished;
+
+                    newCandles.Add(newCandle);
+                }
+                else
+                {
+                    if (oldCandles[i].TimeStart.AddMinutes(-oldTf) != oldCandles[i - 1].TimeStart)
+                    {
+                        newCandle = new Candle();
+                        newCandle.TimeStart = oldCandles[i].TimeStart.AddMinutes(-oldTf);
+                        newCandle.Open = oldCandles[i].Open;
+                        newCandle.High = oldCandles[i].High;
+                        newCandle.Low = oldCandles[i].Low;
+                        newCandle.Close = oldCandles[i].Close;
+                        newCandle.Volume = oldCandles[i].Volume;
+                        newCandle.State = CandleState.Finished;
+
+                        newCandles.Add(newCandle);
+                    }
+                    else
+                    {
+                        newCandle = new Candle();
+                        newCandle.Open = newCandles[^1].Open;
+                        newCandle.TimeStart = newCandles[^1].TimeStart;
+                        newCandle.High = oldCandles[i].High > newCandles[^1].High
+                        ? oldCandles[i].High
+                        : newCandles[^1].High;
+
+                        newCandle.Low = oldCandles[i].Low < newCandles[^1].Low
+                            ? oldCandles[i].Low
+                            : newCandles[^1].Low;
+
+                        newCandle.Close = oldCandles[i].Close;
+                        newCandle.Volume = newCandles[^1].Volume + oldCandles[i].Volume;
+                        newCandle.State = CandleState.Finished;
+
+                        newCandles.RemoveAt(newCandles.Count - 1);
+
+                        newCandles.Add(newCandle);
+                    }
+                }
+
+                if (i == oldCandles.Count - 1)
+                {
+                    newCandle = newCandles[^1];
+                    newCandle.State = CandleState.None;
+
+                    newCandles.RemoveAt(newCandles.Count - 1);
+
+                    newCandles.Add(newCandle);
+                }
+            }
+
+            for (int i = 1; newCandles != null && i < newCandles.Count; i++)
+            {
+                if (newCandles[i - 1].TimeStart == newCandles[i].TimeStart)
+                {
+                    newCandles.RemoveAt(i);
+                    i--;
+                }
+            }
+
+            return newCandles;
         }
 
         private bool CheckTime(DateTime startTime, DateTime endTime, DateTime actualTime)
@@ -504,7 +846,9 @@ namespace OsEngine.Market.Servers.TraderNet
         {
             if (timeFrameMinutes == 1 ||
                 timeFrameMinutes == 5 ||
+                timeFrameMinutes == 10 ||
                 timeFrameMinutes == 15 ||
+                timeFrameMinutes == 30 ||
                 timeFrameMinutes == 60 ||
                 timeFrameMinutes == 1440)
             {
@@ -513,7 +857,7 @@ namespace OsEngine.Market.Servers.TraderNet
             return false;
         }
 
-        private readonly RateGate _rgCandleData = new RateGate(1, TimeSpan.FromMilliseconds(3000));
+        private readonly RateGate _rgCandleData = new RateGate(1, TimeSpan.FromMilliseconds(500));
 
         private List<Candle> RequestCandleHistory(Security security, int interval, DateTime startTime, DateTime endTime)
         {
@@ -527,14 +871,14 @@ namespace OsEngine.Market.Servers.TraderNet
                 reqData.q.@params = new RequestCandle.Params();
                 reqData.q.@params.id = security.Name;
                 reqData.q.@params.timeframe = interval;
-                reqData.q.@params.count = -1;
+                reqData.q.@params.count = 200;
                 reqData.q.@params.date_from = startTime.ToString("dd.MM.yyyy HH:mm");
                 reqData.q.@params.date_to = endTime.ToString("dd.MM.yyyy HH:mm");
 
                 HttpResponseMessage responseMessage = CreateQuery($"/api/", "POST", null, reqData);
                 string JsonResponse = responseMessage.Content.ReadAsStringAsync().Result;
 
-                return ConvertCandles(JsonResponse);
+                return ConvertCandles(JsonResponse, security.NameClass);
             }
             catch (Exception exception)
             {
@@ -543,50 +887,55 @@ namespace OsEngine.Market.Servers.TraderNet
             }
         }
 
-        private List<Candle> ConvertCandles(string JsonResponse)
+        private List<Candle> ConvertCandles(string JsonResponse, string nameClass)
         {
             try
             {
                 ResponseCandle result = JsonConvert.DeserializeObject<ResponseCandle>(JsonResponse);
 
-                if (result.hloc == null)
+                if (result?.hloc == null
+                    || result.vl == null
+                    || result.xSeries == null)
                 {
                     return null;
                 }
 
-                List<List<string>> listHloc = new List<List<string>>();
-                List<string> listVl = new List<string>();
-                List<string> listSeries = new List<string>();
+                string ticker = null;
 
-                IDictionaryEnumerator enumerator = result.hloc.GetEnumerator();
-
-                while (enumerator.MoveNext())
+                foreach (var key in result.hloc.Keys)
                 {
-                    listHloc = (List<List<string>>)enumerator.Value;
+                    ticker = key;
+                    break;
                 }
-                enumerator.Reset();
 
-                enumerator = result.vl.GetEnumerator();
-
-                while (enumerator.MoveNext())
+                if (ticker == null)
                 {
-                    listVl = (List<string>)enumerator.Value;
+                    return null;
                 }
-                enumerator.Reset();
 
-                enumerator = result.xSeries.GetEnumerator();
-
-                while (enumerator.MoveNext())
+                if (!result.hloc.TryGetValue(ticker, out var listHloc) ||
+                    !result.vl.TryGetValue(ticker, out var listVl) ||
+                    !result.xSeries.TryGetValue(ticker, out var listSeries))
                 {
-                    listSeries = (List<string>)enumerator.Value;
+                    return null;
                 }
-                enumerator.Reset();
 
+                int timeShift = GetTimeShift(nameClass);
                 List<Candle> candles = new List<Candle>();
 
                 for (int i = 0; i < listHloc.Count; i++)
                 {
-                    if (CheckCandlesToZeroData(listHloc[i]))
+                    List<string> coords = listHloc[i];
+
+                    if (coords == null
+                        || coords.Count < 4
+                        || i >= listVl.Count
+                        || i >= listSeries.Count)
+                    {
+                        continue;
+                    }
+
+                    if (CheckCandlesToZeroData(coords))
                     {
                         continue;
                     }
@@ -594,22 +943,54 @@ namespace OsEngine.Market.Servers.TraderNet
                     Candle candle = new Candle();
 
                     candle.State = CandleState.Finished;
-                    candle.High = listHloc[i][0].ToDecimal();
-                    candle.Low = listHloc[i][1].ToDecimal();
-                    candle.Open = listHloc[i][2].ToDecimal();
-                    candle.Close = listHloc[i][3].ToDecimal();
+                    candle.High = coords[0].ToDecimal();
+                    candle.Low = coords[1].ToDecimal();
+                    candle.Open = coords[2].ToDecimal();
+                    candle.Close = coords[3].ToDecimal();
                     candle.Volume = listVl[i].ToDecimal();
-                    DateTime time = TimeManager.GetDateTimeFromTimeStampSeconds(long.Parse(listSeries[i]));
-                    candle.TimeStart = time.AddHours(3);
+                    candle.TimeStart = TimeManager.GetDateTimeFromTimeStampSeconds(long.Parse(listSeries[i])).AddHours(timeShift);
 
                     candles.Add(candle);
                 }
+
                 return candles;
             }
             catch (Exception ex)
             {
                 SendLogMessage($"ConvertCandles: {ex.Message}", LogMessageType.Error);
                 return null;
+            }
+        }
+
+        private int GetTimeShift(string nameClass)
+        {
+            if (nameClass == "FIX_Stock")
+            {
+                return 11;
+            }
+            else if (nameClass == "EU_Stock")
+            {
+                return 6;
+            }
+
+            return 3;
+        }
+
+        private int GetCountCandlesFromTimeInterval(DateTime startTime, DateTime endTime, TimeSpan timeFrameSpan)
+        {
+            TimeSpan timeSpanInterval = endTime - startTime;
+
+            if (timeFrameSpan.Hours != 0)
+            {
+                return Convert.ToInt32(timeSpanInterval.TotalHours / timeFrameSpan.Hours);
+            }
+            else if (timeFrameSpan.Days != 0)
+            {
+                return Convert.ToInt32(timeSpanInterval.TotalDays / timeFrameSpan.Days);
+            }
+            else
+            {
+                return Convert.ToInt32(timeSpanInterval.TotalMinutes / timeFrameSpan.Minutes);
             }
         }
 
@@ -648,9 +1029,9 @@ namespace OsEngine.Market.Servers.TraderNet
                 }
 
                 string url = _webSocketUrl + $"/?SID={_sid}";
-                
+
                 _webSocket = new WebSocket(url);
-                
+
                 /*_webSocket.SslConfiguration.EnabledSslProtocols
                     = System.Security.Authentication.SslProtocols.Tls12
                    | System.Security.Authentication.SslProtocols.Tls13;*/
@@ -723,10 +1104,12 @@ namespace OsEngine.Market.Servers.TraderNet
         {
             try
             {
-                if (DisconnectEvent != null
-                 & ServerStatus != ServerConnectStatus.Disconnect)
+                if (ServerStatus != ServerConnectStatus.Disconnect)
                 {
-                    SendLogMessage("Connection Closed by TraderNet. WebSocket Closed Event", LogMessageType.System);
+                    string message = this.GetType().Name + OsLocalization.Market.Message101 + "\n";
+                    message += OsLocalization.Market.Message102;
+
+                    SendLogMessage(message, LogMessageType.Error);
                     ServerStatus = ServerConnectStatus.Disconnect;
                     DisconnectEvent();
                 }
@@ -769,9 +1152,30 @@ namespace OsEngine.Market.Servers.TraderNet
 
         private void WebSocket_Error(object sender, ErrorEventArgs e)
         {
-            if (e.Exception != null)
+            try
             {
-                SendLogMessage(e.Exception.ToString(), LogMessageType.Error);
+                if (ServerStatus == ServerConnectStatus.Disconnect)
+                {
+                    return;
+                }
+
+                if (e.Exception != null)
+                {
+                    string message = e.Exception.ToString();
+
+                    if (message.Contains("The remote party closed the TraderNet WebSocket connection"))
+                    {
+                        // ignore
+                    }
+                    else
+                    {
+                        SendLogMessage(e.Exception.ToString(), LogMessageType.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage("Socket error" + ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -783,7 +1187,7 @@ namespace OsEngine.Market.Servers.TraderNet
 
         #region 9 Security subscribe
 
-        private RateGate _rateGateSubscribe = new RateGate(1, TimeSpan.FromMilliseconds(550));
+        private RateGate _rateGateSubscribe = new RateGate(1, TimeSpan.FromMilliseconds(300));
 
         private List<string> _subscribedSecurities = new List<string>();
 
@@ -797,10 +1201,11 @@ namespace OsEngine.Market.Servers.TraderNet
                 {
                     return;
                 }
-                                
+
+                Thread.Sleep(5000);
+
                 _webSocket.SendAsync("[\"portfolio\"]");
                 _webSocket.SendAsync("[\"orders\"]");
-
             }
             catch (Exception ex)
             {
@@ -875,6 +1280,8 @@ namespace OsEngine.Market.Servers.TraderNet
             return strFromList;
         }
 
+        private bool _portfolioReceived = false;
+
         public bool SubscribeNews()
         {
             return false;
@@ -890,55 +1297,53 @@ namespace OsEngine.Market.Servers.TraderNet
 
         private void MessageReader()
         {
-            Thread.Sleep(5000);
-
             while (true)
             {
                 try
                 {
-                    if (ServerStatus == ServerConnectStatus.Disconnect)
-                    {
-                        Thread.Sleep(1000);
-                        continue;
-                    }
-
                     if (_FIFOListWebSocketMessage.IsEmpty)
                     {
+                        if (IsCompletelyDeleted == true)
+                        {
+                            return;
+                        }
+
                         Thread.Sleep(1);
-                        continue;
                     }
-
-                    string message = null;
-
-                    _FIFOListWebSocketMessage.TryDequeue(out message);
-
-                    if (message == null)
+                    else
                     {
-                        continue;
-                    }
+                        string message = null;
 
-                    if (message.StartsWith("[\"portfolio"))
-                    {
-                        UpdatePortfolio(message);
-                        continue;
-                    }
+                        _FIFOListWebSocketMessage.TryDequeue(out message);
 
-                    if (message.StartsWith("[\"orders"))
-                    {
-                        UpdateOrder(message);
-                        continue;
-                    }
+                        if (message == null)
+                        {
+                            continue;
+                        }
 
-                    if (message.StartsWith("[\"q\""))
-                    {
-                        UpdateTrade(message);
-                        continue;
-                    }
+                        if (message.StartsWith("[\"portfolio"))
+                        {
+                            UpdatePortfolio(message);
+                            continue;
+                        }
 
-                    if (message.StartsWith("[\"b\""))
-                    {
-                        UpdateDepth(message);
-                        continue;
+                        if (message.StartsWith("[\"orders"))
+                        {
+                            UpdateOrder(message);
+                            continue;
+                        }
+
+                        if (message.StartsWith("[\"q\""))
+                        {
+                            UpdateTrade(message);
+                            continue;
+                        }
+
+                        if (message.StartsWith("[\"b\""))
+                        {
+                            UpdateDepth(message);
+                            continue;
+                        }
                     }
                 }
                 catch (Exception exception)
@@ -975,8 +1380,8 @@ namespace OsEngine.Market.Servers.TraderNet
 
                 Portfolio portfolio = new Portfolio();
                 portfolio.Number = "TraderNet";
-                portfolio.ValueBegin = 1;
-                portfolio.ValueCurrent = 1;
+                portfolio.ValueBegin = _portfolioValueBegin;
+                portfolio.ValueCurrent = _portfolioValueCurrent;
 
                 if (positions.acc.Count > 0)
                 {
@@ -989,9 +1394,10 @@ namespace OsEngine.Market.Servers.TraderNet
                         pos.ValueBlocked = 0;
                         pos.ValueCurrent = positions.acc[i].s.ToDecimal();
 
-                        if (_portfolioIsStarted == false)
+                        if (_portfolioIsStarted)
                         {
                             pos.ValueBegin = pos.ValueCurrent;
+                            _portfolioIsStarted = false;
                         }
 
                         portfolio.SetNewPosition(pos);
@@ -1002,24 +1408,20 @@ namespace OsEngine.Market.Servers.TraderNet
                 {
                     for (int i = 0; i < positions.pos.Count; i++)
                     {
+                        decimal lot = GetLotSecurity(positions.pos[i].i);
+                        decimal volume = positions.pos[i].q.ToDecimal() / lot;
+
                         PositionOnBoard pos = new PositionOnBoard();
                         pos.PortfolioName = "TraderNet";
                         pos.SecurityNameCode = positions.pos[i].i;
-                        pos.ValueCurrent = positions.pos[i].q.ToDecimal();
+                        pos.ValueCurrent = volume;
                         pos.ValueBlocked = 0;
-
-                        if (_portfolioIsStarted == false)
-                        {
-                            pos.ValueBegin = pos.ValueCurrent;
-                        }
 
                         portfolio.SetNewPosition(pos);
                     }
                 }
-               
-                _portfolioIsStarted = true;
 
-                PortfolioEvent(new List<Portfolio> { portfolio });
+                PortfolioEvent?.Invoke(new List<Portfolio> { portfolio });
             }
             catch (Exception e)
             {
@@ -1037,28 +1439,31 @@ namespace OsEngine.Market.Servers.TraderNet
                 {
                     Order newOrder = ConvertResponseToOrder(responseOrder[i]);
 
-                    MyOrderEvent(newOrder);
+                    MyOrderEvent?.Invoke(newOrder);
 
                     if (newOrder.State == OrderStateType.Partial ||
                     newOrder.State == OrderStateType.Done)
                     {
                         for (int j = 0; j < responseOrder[i].trade.Count; j++)
                         {
+                            decimal lot = GetLotSecurity(responseOrder[i].instr);
+                            decimal volume = responseOrder[i].trade[j].q.ToDecimal() / lot;
+
                             MyTrade myTrade = new MyTrade();
                             DateTime.TryParse(responseOrder[i].trade[j].date, out myTrade.Time);
                             myTrade.SecurityNameCode = responseOrder[i].instr;
                             myTrade.NumberOrderParent = responseOrder[i].id.ToString();
                             myTrade.NumberTrade = responseOrder[i].trade[j].id;
-                            myTrade.Volume = responseOrder[i].trade[j].q.ToDecimal();
+                            myTrade.Volume = volume;
                             myTrade.Price = responseOrder[i].trade[j].p.ToDecimal();
                             myTrade.Side = GetOrderSide(responseOrder[i].oper);
 
-                            MyTradeEvent(myTrade);
-                        }                    
+                            MyTradeEvent?.Invoke(myTrade);
+                        }
                     }
                 }
             }
-            
+
             catch (Exception ex)
             {
                 SendLogMessage($"TraderNet - UpdateOrder: {ex.Message}", LogMessageType.Error);
@@ -1075,13 +1480,13 @@ namespace OsEngine.Market.Servers.TraderNet
         }
 
         private Side GetOrderSide(string side)
-        {     
+        {
             if (side == "1" || side == "2")
             {
                 return Side.Buy;
             }
 
-            return Side.Sell;            
+            return Side.Sell;
         }
 
         private void UpdateTrade(string message)
@@ -1110,20 +1515,40 @@ namespace OsEngine.Market.Servers.TraderNet
 
                 GetSnapshotTrades(responseTrade);
 
+                int timeShift = GetTimeShiftToSecurity(responseTrade.c);
+
                 Trade trade = new Trade();
                 trade.SecurityNameCode = responseTrade.c;
                 trade.Price = _listTrades[responseTrade.c].ltp.ToDecimal();
                 trade.Id = responseTrade.rev;
-                DateTime.TryParse(_listTrades[responseTrade.c].ltt, out trade.Time);                
+                DateTime time;
+                DateTime.TryParse(_listTrades[responseTrade.c].ltt, out time);
+                trade.Time = time.AddHours(timeShift);
                 trade.Volume = _listTrades[responseTrade.c].lts.ToDecimal();
                 trade.Side = Side.Buy;
 
-                NewTradesEvent(trade);
+                NewTradesEvent?.Invoke(trade);
             }
             catch (Exception ex)
             {
                 SendLogMessage("TraderNet - UpdateTrade: " + ex.Message, LogMessageType.Error);
             }
+        }
+
+        private int GetTimeShiftToSecurity(string name)
+        {
+            for (int i = 0; i < _securities.Count; i++)
+            {
+                if (_securities[i].Name == name)
+                {
+                    if (_securities[i].NameClass == "FIX_Stock")
+                    {
+                        return 8;
+                    }
+                }
+            }
+
+            return 0;
         }
 
         private void GetSnapshotTrades(ResponseTrade responseTrade)
@@ -1182,7 +1607,9 @@ namespace OsEngine.Market.Servers.TraderNet
                 marketDepth.Asks = ascs;
                 marketDepth.Bids = bids;
 
-                marketDepth.Time = DateTime.UtcNow;
+                int timeShift = GetTimeShiftToSecurity(responseDepth.i);
+
+                marketDepth.Time = DateTime.Now.AddHours(timeShift);
 
                 if (marketDepth.Time < _lastTimeMd)
                 {
@@ -1196,7 +1623,7 @@ namespace OsEngine.Market.Servers.TraderNet
 
                 _lastTimeMd = marketDepth.Time;
 
-                MarketDepthEvent(marketDepth);
+                MarketDepthEvent?.Invoke(marketDepth);
 
             }
             catch (Exception ex)
@@ -1276,18 +1703,21 @@ namespace OsEngine.Market.Servers.TraderNet
         public void SendOrder(Order order)
         {
             try
-            {                
+            {
                 _rateGateSendOrder.WaitToProceed();
-                                
+
                 Dictionary<string, dynamic> data = new Dictionary<string, dynamic>();
 
                 Dictionary<string, dynamic> paramsDict = new Dictionary<string, dynamic>();
 
+                decimal volume = order.Volume * GetLotSecurity(order.SecurityNameCode);
+
                 paramsDict.Add("instr_name", order.SecurityNameCode);
                 paramsDict.Add("action_id", order.Side == Side.Buy ? "1" : "3");
                 paramsDict.Add("order_type_id", order.TypeOrder == OrderPriceType.Market ? "1" : "2");
-                paramsDict.Add("qty", order.Volume.ToString());
+                paramsDict.Add("qty", volume.ToString());
                 paramsDict.Add("limit_price", order.Price.ToString().Replace(",", "."));
+                paramsDict.Add("expiration_id", "3");
                 paramsDict.Add("user_order_id", order.NumberUser.ToString());
 
                 data.Add("apiKey", _publicKey);
@@ -1297,22 +1727,46 @@ namespace OsEngine.Market.Servers.TraderNet
                 HttpResponseMessage responseMessage = CreateAuthQuery($"/api/v2/cmd/putTradeOrder", "POST", null, data);
                 string JsonResponse = responseMessage.Content.ReadAsStringAsync().Result;
 
+                OrderResponse response = JsonConvert.DeserializeObject<OrderResponse>(JsonResponse);
+
+                if (!string.IsNullOrEmpty(response.warning))
+                {
+                    SendLogMessage($"Order: {response.warning}", LogMessageType.Error);
+                }
+
                 if (!JsonResponse.Contains("order_id"))
                 {
-                    order.State = OrderStateType.Fail;
-
-                    if (MyOrderEvent != null)
-                    {
-                        MyOrderEvent(order);
-                    }
-
-                    SendLogMessage($"SendOrder: {JsonResponse}", LogMessageType.Error);
-                }                               
+                    CreateOrderFail(order);
+                    SendLogMessage($"Order fail: {JsonResponse}", LogMessageType.Error);
+                }
             }
             catch (Exception ex)
             {
-                SendLogMessage(ex.Message, LogMessageType.Error);
+                SendLogMessage($"Order fail: {ex.ToString()}", LogMessageType.Error);
             }
+        }
+
+        private void CreateOrderFail(Order order)
+        {
+            order.State = OrderStateType.Fail;
+
+            if (MyOrderEvent != null)
+            {
+                MyOrderEvent(order);
+            }
+        }
+
+        private decimal GetLotSecurity(string securityNameCode)
+        {
+            for (int i = 0; _securities != null && i < _securities.Count; i++)
+            {
+                if (_securities[i].Name == securityNameCode)
+                {
+                    return _securities[i].Lot;
+                }
+            }
+
+            return 1;
         }
 
         public bool CancelOrder(Order order)
@@ -1326,7 +1780,7 @@ namespace OsEngine.Market.Servers.TraderNet
                 Dictionary<string, dynamic> paramsDict = new Dictionary<string, dynamic>();
 
                 paramsDict.Add("order_id", order.NumberMarket.ToString());
-               
+
                 data.Add("apiKey", _publicKey);
                 data.Add("cmd", "delTradeOrder");
                 data.Add("params", paramsDict);
@@ -1336,7 +1790,17 @@ namespace OsEngine.Market.Servers.TraderNet
 
                 if (!JsonResponse.Contains("result"))
                 {
-                    return false;
+                    OrderStateType state = GetOrderStatus(order);
+
+                    if (state == OrderStateType.None)
+                    {
+                        SendLogMessage($"Cancel order failed. ", LogMessageType.Error);
+                        return false;
+                    }
+                    else
+                    {
+                        return true;
+                    }
                 }
                 else
                 {
@@ -1345,7 +1809,7 @@ namespace OsEngine.Market.Servers.TraderNet
             }
             catch (Exception ex)
             {
-                SendLogMessage(ex.Message, LogMessageType.Error);
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
 
             return false;
@@ -1371,6 +1835,11 @@ namespace OsEngine.Market.Servers.TraderNet
 
         public OrderStateType GetOrderStatus(Order order)
         {
+            if (order.NumberUser == 0)
+            {
+                return OrderStateType.None;
+            }
+
             try
             {
                 Dictionary<string, dynamic> data = new Dictionary<string, dynamic>();
@@ -1384,6 +1853,14 @@ namespace OsEngine.Market.Servers.TraderNet
                 data.Add("params", paramsDict);
 
                 HttpResponseMessage responseMessage = CreateAuthQuery($"/api/v2/cmd/getNotifyOrderJson", "POST", null, data);
+
+                if (responseMessage == null
+                    || responseMessage.ToString().StartsWith("<")
+                    || responseMessage.ToString().Contains("<!DOCTYPE"))
+                {
+                    return OrderStateType.None;
+                }
+
                 string JsonResponse = responseMessage.Content.ReadAsStringAsync().Result;
 
                 if (JsonResponse.Contains("errMsg"))
@@ -1398,7 +1875,15 @@ namespace OsEngine.Market.Servers.TraderNet
                 {
                     ResponseOrders item = response.result.orders.order[i];
 
-                    Int32.TryParse(item.userOrderId.Split(':')[1], out int number);
+                    string[] strNumber = item.userOrderId.Split(':');
+
+                    if (strNumber.Length < 2)
+                    {
+                        //SendLogMessage($"GetOrderStatus: Incorrect UserOrderID {item.userOrderId}", LogMessageType.Error);
+                        continue;
+                    }
+
+                    Int32.TryParse(strNumber[1], out int number);
 
                     if (number != order.NumberUser)
                     {
@@ -1418,16 +1903,19 @@ namespace OsEngine.Market.Servers.TraderNet
                     {
                         for (int j = 0; j < item.trade.Count; j++)
                         {
+                            decimal lot = GetLotSecurity(item.instr);
+                            decimal volume = item.trade[j].q.ToDecimal() / lot;
+
                             MyTrade myTrade = new MyTrade();
                             DateTime.TryParse(item.trade[j].date, out myTrade.Time);
                             myTrade.SecurityNameCode = item.instr;
                             myTrade.NumberOrderParent = item.id.ToString();
                             myTrade.NumberTrade = item.trade[j].id;
-                            myTrade.Volume = item.trade[j].q.ToDecimal();
+                            myTrade.Volume = volume;
                             myTrade.Price = item.trade[j].p.ToDecimal();
                             myTrade.Side = GetOrderSide(item.oper);
 
-                            MyTradeEvent(myTrade);
+                            MyTradeEvent?.Invoke(myTrade);
                         }
                     }
 
@@ -1436,7 +1924,7 @@ namespace OsEngine.Market.Servers.TraderNet
             }
             catch (Exception ex)
             {
-                SendLogMessage($"GetOrderStatus: {ex.Message}", LogMessageType.Error);
+                SendLogMessage($"GetOrderStatus: {ex}", LogMessageType.Error);
             }
 
             return OrderStateType.None;
@@ -1445,7 +1933,7 @@ namespace OsEngine.Market.Servers.TraderNet
         private List<ResponseOrders> GetJsonString(string jsonResponse)
         {
             int count = jsonResponse.IndexOf(",");
-            string str = jsonResponse.Remove(0, count+1);
+            string str = jsonResponse.Remove(0, count + 1);
             count = str.LastIndexOf(",");
             str = str.Remove(count);
 
@@ -1466,15 +1954,18 @@ namespace OsEngine.Market.Servers.TraderNet
                 return null;
             }
 
+            decimal lot = GetLotSecurity(responseOrder.instr);
+            decimal volume = responseOrder.q.ToDecimal() / lot;
+
             Order newOrder = new Order();
 
             newOrder.SecurityNameCode = responseOrder.instr;
             newOrder.SecurityClassCode = GetClassSecurity(newOrder.SecurityNameCode);
-            DateTime.TryParse(responseOrder.date, out newOrder.TimeCallBack);            
+            DateTime.TryParse(responseOrder.date, out newOrder.TimeCallBack);
             newOrder.NumberMarket = responseOrder.id.ToString();
             newOrder.Side = GetOrderSide(responseOrder.oper);
             newOrder.State = GetOrderState(responseOrder.stat);
-            newOrder.Volume = responseOrder.q.ToDecimal();
+            newOrder.Volume = volume;
             newOrder.Price = responseOrder.p.ToDecimal();
             newOrder.ServerType = ServerType.TraderNet;
             newOrder.PortfolioNumber = "TraderNet";
@@ -1513,7 +2004,7 @@ namespace OsEngine.Market.Servers.TraderNet
         }
 
         public void CancelAllOrdersToSecurity(Security security)
-        {            
+        {
         }
 
         public void CancelAllOrders()
@@ -1549,15 +2040,15 @@ namespace OsEngine.Market.Servers.TraderNet
                 }
 
                 ResponseRestOrders response = JsonConvert.DeserializeObject<ResponseRestOrders>(JsonResponse);
-                                
+
                 List<Order> orders = new List<Order>();
 
                 for (int i = 0; i < response.result.orders.order.Count; i++)
-                {                   
+                {
                     if (GetOrderState(response.result.orders.order[i].stat) == OrderStateType.Active)
                     {
                         orders.Add(ConvertResponseToOrder(response.result.orders.order[i]));
-                    }                    
+                    }
                 }
 
                 return orders;
@@ -1584,6 +2075,9 @@ namespace OsEngine.Market.Servers.TraderNet
                 case ("1"):
                     stateType = OrderStateType.Pending;
                     break;
+                case ("12"):
+                    stateType = OrderStateType.Pending;
+                    break;
                 case ("20"):
                     stateType = OrderStateType.Partial;
                     break;
@@ -1607,6 +2101,9 @@ namespace OsEngine.Market.Servers.TraderNet
                     break;
                 case ("70"):
                     stateType = OrderStateType.Fail;
+                    break;
+                case ("72"):
+                    stateType = OrderStateType.Partial;
                     break;
                 case ("74"):
                     stateType = OrderStateType.Fail;
@@ -1675,7 +2172,7 @@ namespace OsEngine.Market.Servers.TraderNet
                     IDictionaryEnumerator enumSec = value.GetEnumerator();
 
                     while (enumSec.MoveNext())
-                    {                       
+                    {
                         if (enumSec.Value as string == null)
                         {
                             continue;
@@ -1714,7 +2211,7 @@ namespace OsEngine.Market.Servers.TraderNet
             List<string> strings = new List<string>();
 
             SortedDictionary<string, object> sortedDict = new SortedDictionary<string, object>(dictionary);
-            
+
             IDictionaryEnumerator enumerator = sortedDict.GetEnumerator();
 
             while (enumerator.MoveNext())
@@ -1747,7 +2244,7 @@ namespace OsEngine.Market.Servers.TraderNet
                 string stringValue = rawList[i].ToString();
                 stringValues.Add($"'{stringValue}'");
             }
-            
+
             string stringList = string.Join(", ", stringValues);
             return $"[{stringList}]";
         }
@@ -1801,6 +2298,8 @@ namespace OsEngine.Market.Servers.TraderNet
 
             return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

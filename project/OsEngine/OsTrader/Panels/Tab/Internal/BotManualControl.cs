@@ -295,13 +295,16 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
         /// </summary>
         public void ShowDialog(StartProgram startProgram)
         {
-            IServer server = _botTab.Connector.MyServer;
-
             IServerPermission serverPermission = null;
 
-            if(server != null)
+            if (_botTab != null)
             {
-                serverPermission = ServerMaster.GetServerPermission(server.ServerType);
+                IServer server = _botTab.Connector.MyServer;
+
+                if (server != null)
+                {
+                    serverPermission = ServerMaster.GetServerPermission(server.ServerType);
+                }
             }
 
             BotManualControlUi ui = new BotManualControlUi(this, startProgram, serverPermission);
@@ -494,7 +497,7 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
         /// <summary>
         /// Order lifetime type
         /// </summary>
-        public OrderTypeTime OrderTypeTime;
+        public OrderTypeTime OrderTypeTime = OrderTypeTime.Specified;
 
         public bool LimitsMakerOnly = false;
 
@@ -569,7 +572,13 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
                         }
 
                         if (openOrder.State != OrderStateType.Active &&
-                            openOrder.State != OrderStateType.Partial)
+                            openOrder.State != OrderStateType.Partial &&
+                            openOrder.State != OrderStateType.Pending)
+                        {
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(openOrder.NumberMarket))
                         {
                             continue;
                         }
@@ -627,8 +636,14 @@ namespace OsEngine.OsTrader.Panels.Tab.Internal
                             continue;
                         }
 
-                        if ((closeOrder.State != OrderStateType.Active &&
-                             closeOrder.State != OrderStateType.Partial))
+                        if (closeOrder.State != OrderStateType.Active 
+                            && closeOrder.State != OrderStateType.Partial
+                            && closeOrder.State != OrderStateType.Pending)
+                        {
+                            continue;
+                        }
+
+                        if(string.IsNullOrEmpty(closeOrder.NumberMarket))
                         {
                             continue;
                         }

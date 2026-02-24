@@ -101,6 +101,10 @@ namespace OsEngine.Market.Servers.MoexAlgopack
 
             public event Action DisconnectEvent;
 
+            public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+            public bool IsCompletelyDeleted { get; set; }
+
             #endregion
 
             #region 2 Properties
@@ -1063,7 +1067,9 @@ namespace OsEngine.Market.Servers.MoexAlgopack
 
                 return null;
             }
-            
+
+            public void SetLeverage(Security security, decimal leverage) { }
+
             #endregion
 
             #region 9 Log

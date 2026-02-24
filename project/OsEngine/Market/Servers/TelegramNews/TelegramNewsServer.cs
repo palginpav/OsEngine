@@ -344,7 +344,12 @@ namespace OsEngine.Market.Servers.TelegramNews
         public ServerConnectStatus ServerStatus { get; set; }
 
         public event Action ConnectEvent;
+
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -619,6 +624,8 @@ namespace OsEngine.Market.Servers.TelegramNews
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
 
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
     }

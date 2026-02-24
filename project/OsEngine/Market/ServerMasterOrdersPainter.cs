@@ -342,22 +342,22 @@ namespace OsEngine.Market
                             // active orders BotStation Light
                             if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                             {
-                                RobotUiLight.Instance?.Dispatcher.Invoke(() =>
+                                RobotUiLite.Instance?.Dispatcher.Invoke(() =>
                                 {
                                     try
                                     {
-                                        ActivePage = Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content);
-                                        ActivePageSize = Convert.ToInt32(RobotUiLight.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
+                                        ActivePage = Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content);
+                                        ActivePageSize = Convert.ToInt32(RobotUiLite.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
 
                                         if (ActivePage > GetTotalPages(activeOrders.Count, ActivePageSize))
                                         {
-                                            RobotUiLight.Instance.LabelNumberThisPageActive.Content = "1";
+                                            RobotUiLite.Instance.LabelNumberThisPageActive.Content = "1";
                                         }
 
-                                        ActivePage = Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content);
-                                        ActivePageSize = Convert.ToInt32(RobotUiLight.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
+                                        ActivePage = Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content);
+                                        ActivePageSize = Convert.ToInt32(RobotUiLite.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
 
-                                        RobotUiLight.Instance.LabelNumberAllPageActive.Content = GetTotalPages(activeOrders.Count, ActivePageSize).ToString();
+                                        RobotUiLite.Instance.LabelNumberAllPageActive.Content = GetTotalPages(activeOrders.Count, ActivePageSize).ToString();
                                     }
                                     catch (Exception error)
                                     {
@@ -400,22 +400,22 @@ namespace OsEngine.Market
                             // active orders Tester Light
                             if (_startAllProgram == StartUiToPainter.IsTesterLight)
                             {
-                                TesterUiLight.Instance?.Dispatcher.Invoke(() =>
+                                TesterUiLite.Instance?.Dispatcher.Invoke(() =>
                                 {
                                     try
                                     {
-                                        ActivePage = Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content);
-                                        ActivePageSize = Convert.ToInt32(TesterUiLight.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
+                                        ActivePage = Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content);
+                                        ActivePageSize = Convert.ToInt32(TesterUiLite.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
 
                                         if (ActivePage > GetTotalPages(activeOrders.Count, ActivePageSize))
                                         {
-                                            TesterUiLight.Instance.LabelNumberThisPageActive.Content = "1";
+                                            TesterUiLite.Instance.LabelNumberThisPageActive.Content = "1";
                                         }
 
-                                        ActivePage = Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content);
-                                        ActivePageSize = Convert.ToInt32(TesterUiLight.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
+                                        ActivePage = Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content);
+                                        ActivePageSize = Convert.ToInt32(TesterUiLite.Instance.ComboBoxQuantityPerPageActive.SelectedValue);
 
-                                        TesterUiLight.Instance.LabelNumberAllPageActive.Content = GetTotalPages(activeOrders.Count, ActivePageSize).ToString();
+                                        TesterUiLite.Instance.LabelNumberAllPageActive.Content = GetTotalPages(activeOrders.Count, ActivePageSize).ToString();
                                     }
                                     catch (Exception error)
                                     {
@@ -464,22 +464,22 @@ namespace OsEngine.Market
                             // history orders BotStation Light
                             if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                             {
-                                RobotUiLight.Instance?.Dispatcher.Invoke(() =>
+                                RobotUiLite.Instance?.Dispatcher.Invoke(() =>
                                 {
                                     try
                                     {
-                                        HistoricalPage = Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content);
-                                        HistoricalPageSize = Convert.ToInt32(RobotUiLight.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
+                                        HistoricalPage = Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content);
+                                        HistoricalPageSize = Convert.ToInt32(RobotUiLite.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
 
                                         if (HistoricalPage > GetTotalPages(historicalOrders.Count, HistoricalPageSize))
                                         {
-                                            RobotUiLight.Instance.LabelNumberThisPageHistorical.Content = "1";
+                                            RobotUiLite.Instance.LabelNumberThisPageHistorical.Content = "1";
                                         }
 
-                                        HistoricalPage = Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content);
-                                        HistoricalPageSize = Convert.ToInt32(RobotUiLight.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
+                                        HistoricalPage = Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content);
+                                        HistoricalPageSize = Convert.ToInt32(RobotUiLite.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
 
-                                        RobotUiLight.Instance.LabelNumberAllPageHistorical.Content = GetTotalPages(historicalOrders.Count, HistoricalPageSize).ToString();
+                                        RobotUiLite.Instance.LabelNumberAllPageHistorical.Content = GetTotalPages(historicalOrders.Count, HistoricalPageSize).ToString();
                                     }
                                     catch (Exception error)
                                     {
@@ -493,22 +493,22 @@ namespace OsEngine.Market
                             // history orders Tester Light
                             if (_startAllProgram == StartUiToPainter.IsTesterLight)
                             {
-                                TesterUiLight.Instance?.Dispatcher.Invoke(() =>
+                                TesterUiLite.Instance?.Dispatcher.Invoke(() =>
                                 {
                                     try
                                     {
-                                        HistoricalPage = Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content);
-                                        HistoricalPageSize = Convert.ToInt32(TesterUiLight.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
+                                        HistoricalPage = Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content);
+                                        HistoricalPageSize = Convert.ToInt32(TesterUiLite.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
 
                                         if (HistoricalPage > GetTotalPages(historicalOrders.Count, HistoricalPageSize))
                                         {
-                                            TesterUiLight.Instance.LabelNumberThisPageHistorical.Content = "1";
+                                            TesterUiLite.Instance.LabelNumberThisPageHistorical.Content = "1";
                                         }
 
-                                        HistoricalPage = Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content);
-                                        HistoricalPageSize = Convert.ToInt32(TesterUiLight.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
+                                        HistoricalPage = Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content);
+                                        HistoricalPageSize = Convert.ToInt32(TesterUiLite.Instance.ComboBoxQuantityPerPageHistorical.SelectedValue);
 
-                                        TesterUiLight.Instance.LabelNumberAllPageHistorical.Content = GetTotalPages(historicalOrders.Count, HistoricalPageSize).ToString();
+                                        TesterUiLite.Instance.LabelNumberAllPageHistorical.Content = GetTotalPages(historicalOrders.Count, HistoricalPageSize).ToString();
                                     }
                                     catch (Exception error)
                                     {
@@ -535,10 +535,10 @@ namespace OsEngine.Market
             {
                 if (_startAllProgram == StartUiToPainter.IsTesterLight)
                 {
-                    if (Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content) > 1)
+                    if (Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content) > 1)
                     {
-                        TesterUiLight.Instance.LabelNumberThisPageActive.Content =
-                            Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content) - 1;
+                        TesterUiLite.Instance.LabelNumberThisPageActive.Content =
+                            Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content) - 1;
 
                         ForcePaint();
                     }
@@ -557,10 +557,10 @@ namespace OsEngine.Market
 
                 if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                 {
-                    if (Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content) > 1)
+                    if (Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content) > 1)
                     {
-                        RobotUiLight.Instance.LabelNumberThisPageActive.Content =
-                            Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content) - 1;
+                        RobotUiLite.Instance.LabelNumberThisPageActive.Content =
+                            Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content) - 1;
 
                         ForcePaint();
                     }
@@ -589,11 +589,11 @@ namespace OsEngine.Market
             {
                 if (_startAllProgram == StartUiToPainter.IsTesterLight)
                 {
-                    if (Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content) !=
-                        Convert.ToInt32(TesterUiLight.Instance.LabelNumberAllPageActive.Content))
+                    if (Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content) !=
+                        Convert.ToInt32(TesterUiLite.Instance.LabelNumberAllPageActive.Content))
                     {
-                        TesterUiLight.Instance.LabelNumberThisPageActive.Content =
-                            Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageActive.Content) + 1;
+                        TesterUiLite.Instance.LabelNumberThisPageActive.Content =
+                            Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageActive.Content) + 1;
 
                         ForcePaint();
                     }
@@ -613,11 +613,11 @@ namespace OsEngine.Market
 
                 if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                 {
-                    if (Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content) !=
-                        Convert.ToInt32(RobotUiLight.Instance.LabelNumberAllPageActive.Content))
+                    if (Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content) !=
+                        Convert.ToInt32(RobotUiLite.Instance.LabelNumberAllPageActive.Content))
                     {
-                        RobotUiLight.Instance.LabelNumberThisPageActive.Content =
-                            Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageActive.Content) + 1;
+                        RobotUiLite.Instance.LabelNumberThisPageActive.Content =
+                            Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageActive.Content) + 1;
 
                         ForcePaint();
                     }
@@ -647,10 +647,10 @@ namespace OsEngine.Market
             {
                 if (_startAllProgram == StartUiToPainter.IsTesterLight)
                 {
-                    if (Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content) > 1)
+                    if (Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content) > 1)
                     {
-                        TesterUiLight.Instance.LabelNumberThisPageHistorical.Content =
-                            Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content) - 1;
+                        TesterUiLite.Instance.LabelNumberThisPageHistorical.Content =
+                            Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content) - 1;
 
                         ForcePaint();
                     }
@@ -658,10 +658,10 @@ namespace OsEngine.Market
 
                 if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                 {
-                    if (Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content) > 1)
+                    if (Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content) > 1)
                     {
-                        RobotUiLight.Instance.LabelNumberThisPageHistorical.Content =
-                            Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content) - 1;
+                        RobotUiLite.Instance.LabelNumberThisPageHistorical.Content =
+                            Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content) - 1;
 
                         ForcePaint();
                     }
@@ -679,11 +679,11 @@ namespace OsEngine.Market
             {
                 if (_startAllProgram == StartUiToPainter.IsTesterLight)
                 {
-                    if (Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content) !=
-                        Convert.ToInt32(TesterUiLight.Instance.LabelNumberAllPageHistorical.Content))
+                    if (Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content) !=
+                        Convert.ToInt32(TesterUiLite.Instance.LabelNumberAllPageHistorical.Content))
                     {
-                        TesterUiLight.Instance.LabelNumberThisPageHistorical.Content =
-                            Convert.ToInt32(TesterUiLight.Instance.LabelNumberThisPageHistorical.Content) + 1;
+                        TesterUiLite.Instance.LabelNumberThisPageHistorical.Content =
+                            Convert.ToInt32(TesterUiLite.Instance.LabelNumberThisPageHistorical.Content) + 1;
 
                         ForcePaint();
                     }
@@ -691,11 +691,11 @@ namespace OsEngine.Market
 
                 if (_startAllProgram == StartUiToPainter.IsOsTraderLight)
                 {
-                    if (Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content) !=
-                        Convert.ToInt32(RobotUiLight.Instance.LabelNumberAllPageHistorical.Content))
+                    if (Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content) !=
+                        Convert.ToInt32(RobotUiLite.Instance.LabelNumberAllPageHistorical.Content))
                     {
-                        RobotUiLight.Instance.LabelNumberThisPageHistorical.Content =
-                            Convert.ToInt32(RobotUiLight.Instance.LabelNumberThisPageHistorical.Content) + 1;
+                        RobotUiLite.Instance.LabelNumberThisPageHistorical.Content =
+                            Convert.ToInt32(RobotUiLite.Instance.LabelNumberThisPageHistorical.Content) + 1;
 
                         ForcePaint();
                     }
@@ -815,7 +815,8 @@ namespace OsEngine.Market
                             myOrder.NumberMarket = order.NumberMarket;
                         }
 
-                        if (order.Price != 0)
+                        if (order.Price != 0
+                            && myOrder.Price == 0)
                         {
                             myOrder.Price = order.Price;
                         }
@@ -830,14 +831,10 @@ namespace OsEngine.Market
                             myOrder.PortfolioNumber = order.PortfolioNumber;
                         }
 
-                        if (order.Volume != 0)
+                        if (myOrder.Volume == 0 
+                            && order.Volume != 0)
                         {
                             myOrder.Volume = order.Volume;
-                        }
-
-                        if (order.VolumeExecute != 0)
-                        {
-                            myOrder.VolumeExecute = order.VolumeExecute;
                         }
 
                         if (order.State != OrderStateType.None)

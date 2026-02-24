@@ -607,7 +607,12 @@ namespace OsEngine.Market.Servers.MoexFixFastTwimeFutures
         public List<IServerParameter> ServerParameters { get; set; }
 
         public event Action ConnectEvent;
+
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -4529,6 +4534,8 @@ namespace OsEngine.Market.Servers.MoexFixFastTwimeFutures
 
             return context;
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

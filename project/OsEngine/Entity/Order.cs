@@ -128,10 +128,18 @@ namespace OsEngine.Entity
                 }
 
             }
-            set { _volumeExecute = value; }
+            set 
+            { 
+                _volumeExecute = value; 
+            }
         }
         private decimal _volumeExecute;
         private bool _volumeExecuteChange;
+
+        public void ReCalculateVolume()
+        {
+            _volumeExecuteChange = true;
+        }
 
         /// <summary>
         /// My trades belonging to this order
@@ -692,13 +700,13 @@ namespace OsEngine.Entity
         GTC,
 
         /// <summary>
-        /// Order will be throughout the day. If the exchange has such possibilities
+        /// Order will be throughout the day. 
         /// </summary>
         Day,
 
         /// <summary>
-        /// Passive order. Order that is added to the order book only if it cannot be executed immediately
+        /// Order will be throughout the trade session.
         /// </summary>
-        BookOrCancel
+        TradeSession
     }
 }

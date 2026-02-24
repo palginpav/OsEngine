@@ -51,7 +51,7 @@
 
         public bool DataFeedTfMarketDepthCanLoad
         {
-            get { return false; }
+            get { return true; }
         }
 
         public bool DataFeedTf1MinuteCanLoad
@@ -264,12 +264,29 @@
             get { return 10; }
         }
 
-        public string[] IpAddresServer
+        public string[] IpAddressServer
         {
             get { return null; }
         }
 
         public bool HaveOnlyMakerLimitsRealization
+        {
+            get { return false; }
+        }
+
+        public bool Leverage_IsSupports
+        {
+            get { return false; }
+        }
+
+        public decimal Leverage_StandardValue
+        {
+            get { return 10; }
+        }
+
+        public string[] Leverage_SupportClasses { get; }
+
+        public bool CanChangeOrderMarketNumber
         {
             get { return false; }
         }

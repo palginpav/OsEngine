@@ -18,6 +18,7 @@ using OsEngine.Market.Servers.Entity;
 using OsEngine.OsTrader.SystemAnalyze;
 using System.Net.Sockets;
 using System.Text;
+using System.Linq;
 
 namespace OsEngine.Market.Servers
 {
@@ -35,6 +36,8 @@ namespace OsEngine.Market.Servers
 
         public void Delete()
         {
+            IsDeleted = true;
+
             try
             {
                 if (File.Exists(@"Engine\" + ServerNameUnique + @"Params.txt"))
@@ -47,13 +50,108 @@ namespace OsEngine.Market.Servers
                     File.Delete(@"Engine\" + ServerNameUnique + @"ServerSettings.txt");
                 }
 
-                ServerRealization.Dispose();
+                if (File.Exists(@"Engine\" + ServerNameUnique + @"nonTradePeriod.txt"))
+                {
+                    File.Delete(@"Engine\" + ServerNameUnique + @"nonTradePeriod.txt");
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (_serverRealization != null)
+                {
+                    _serverRealization.NewTradesEvent -= ServerRealization_NewTradesEvent;
+                    _serverRealization.ConnectEvent -= _serverRealization_Connected;
+                    _serverRealization.DisconnectEvent -= _serverRealization_Disconnected;
+                    _serverRealization.MarketDepthEvent -= _serverRealization_MarketDepthEvent;
+                    _serverRealization.MyOrderEvent -= _serverRealization_MyOrderEvent;
+                    _serverRealization.MyTradeEvent -= _serverRealization_MyTradeEvent;
+                    _serverRealization.PortfolioEvent -= _serverRealization_PortfolioEvent;
+                    _serverRealization.SecurityEvent -= _serverRealization_SecurityEvent;
+                    _serverRealization.LogMessageEvent -= SendLogMessage;
+                    _serverRealization.ForceCheckOrdersAfterReconnectEvent -= _serverRealization_ForceCheckOrdersAfterReconnect;
+                    _serverRealization.NewsEvent -= _serverRealization_NewsEvent;
+                    _serverRealization.AdditionalMarketDataEvent -= _serverRealization_AdditionalMarketDataEvent;
+                    _serverRealization.FundingUpdateEvent -= _serverRealization_FundingUpdateEvent;
+                    _serverRealization.Volume24hUpdateEvent -= _serverRealization_Volume24hUpdateEvent;
+
+                    if (_serverRealization.ServerStatus == ServerConnectStatus.Connect)
+                    {
+                        _serverRealization.Dispose();
+                    }
+
+                    _serverRealization.IsCompletelyDeleted = true;
+
+                    //_serverRealization = null;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (_ordersHub != null)
+                {
+                    _ordersHub.LogMessageEvent -= SendLogMessage;
+                    _ordersHub.GetAllActiveOrdersOnReconnectEvent -= _ordersHub_GetAllActiveOrdersOnReconnectEvent;
+                    _ordersHub.ActiveStateOrderCheckStatusEvent -= _ordersHub_ActiveStateOrderCheckStatusEvent;
+                    _ordersHub.LostOrderEvent -= _ordersHub_LostOrderEvent;
+                    _ordersHub.LostMyTradesEvent -= _ordersHub_LostMyTradesEvent;
+                    _ordersHub = null;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (_tickStorage != null)
+                {
+                    _tickStorage.TickLoadedEvent -= _tickStorage_TickLoadedEvent;
+                    _tickStorage.LogMessageEvent -= SendLogMessage;
+                    _tickStorage = null;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (_candleStorage != null)
+                {
+                    _candleStorage.LogMessageEvent -= SendLogMessage;
+                    _candleStorage = null;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                if (Log != null)
+                {
+                    Log.Delete();
+                }
             }
             catch
             {
                 // ignore
             }
         }
+
+        public bool IsDeleted = false;
 
         #region Instead of a constructor
 
@@ -75,9 +173,8 @@ namespace OsEngine.Market.Servers
                 _serverRealization.PortfolioEvent += _serverRealization_PortfolioEvent;
                 _serverRealization.SecurityEvent += _serverRealization_SecurityEvent;
                 _serverRealization.LogMessageEvent += SendLogMessage;
-
+                _serverRealization.ForceCheckOrdersAfterReconnectEvent += _serverRealization_ForceCheckOrdersAfterReconnect;
                 _serverRealization.NewsEvent += _serverRealization_NewsEvent;
-
                 _serverRealization.AdditionalMarketDataEvent += _serverRealization_AdditionalMarketDataEvent;
                 _serverRealization.FundingUpdateEvent += _serverRealization_FundingUpdateEvent;
                 _serverRealization.Volume24hUpdateEvent += _serverRealization_Volume24hUpdateEvent;
@@ -94,12 +191,12 @@ namespace OsEngine.Market.Servers
                 _needToSaveTicksDaysCountParam.ValueChange += _needToSaveTicksDaysCountParam_ValueChange;
                 ServerParameters[1].Comment = OsLocalization.Market.Label88;
 
-                CreateParameterBoolean(OsLocalization.Market.ServerParam5, true);
+                CreateParameterBoolean(OsLocalization.Market.ServerParam5, false);
                 _needToSaveCandlesParam = (ServerParameterBool)ServerParameters[ServerParameters.Count - 1];
                 _needToSaveCandlesParam.ValueChange += SaveCandleHistoryParam_ValueChange;
                 ServerParameters[2].Comment = OsLocalization.Market.Label89;
 
-                CreateParameterInt(OsLocalization.Market.ServerParam6, 500);
+                CreateParameterInt(OsLocalization.Market.ServerParam6, 900);
                 _needToLoadCandlesCountParam = (ServerParameterInt)ServerParameters[ServerParameters.Count - 1];
                 _needToLoadCandlesCountParam.ValueChange += _needToLoadCandlesCountParam_ValueChange;
                 ServerParameters[3].Comment = OsLocalization.Market.Label90;
@@ -126,7 +223,22 @@ namespace OsEngine.Market.Servers
 
                 CreateParameterButton(OsLocalization.Market.ServerParam12);
                 ServerParameters[9].Comment = OsLocalization.Market.Label131;
-                ((ServerParameterButton)ServerParameters[9]).UserClickButton += AServer_UserClickButton;
+                ((ServerParameterButton)ServerParameters[9]).UserClickButton += AServer_UserClickSecuritiesUiButton;
+
+                CreateParameterButton(OsLocalization.Market.ServerParam14);
+                ServerParameters[10].Comment = OsLocalization.Market.Label281;
+                ((ServerParameterButton)ServerParameters[10]).UserClickButton += AServer_UserClickNonTradePeriodsUiButton;
+
+                if (ServerPermission != null
+                    && ServerPermission.Leverage_IsSupports &&
+                        ServerPermission.Leverage_SupportClasses != null)
+                {
+                    Task.Run(() => GetListLeverageTask());
+
+                    CreateParameterButton(OsLocalization.Market.LeverageButton);
+                    ServerParameters[ServerParameters.Count - 1].Comment = OsLocalization.Market.LeverageButtonCommit;
+                    ((ServerParameterButton)ServerParameters[ServerParameters.Count - 1]).UserClickButton += AServer_UserClickLeverageUiButton;
+                }
 
                 if (ServerPermission != null
                     && ServerPermission.IsSupports_ProxyFor_MultipleInstances)
@@ -153,8 +265,8 @@ namespace OsEngine.Market.Servers
                 if (ServerPermission != null
                     && ServerPermission.IsSupports_CheckDataFeedLogic)
                 {
-                    Task task4 = new Task(CheckDataFlowThread);
-                    task4.Start();
+                    Task task5 = new Task(CheckDataFlowThread);
+                    task5.Start();
 
                     CreateParameterBoolean(OsLocalization.Market.Label242, false);
                     _needToCheckDataFeedOnDisconnect = (ServerParameterBool)ServerParameters[ServerParameters.Count - 1];
@@ -184,18 +296,21 @@ namespace OsEngine.Market.Servers
 
                 _loadDataLocker = "lockerData_" + ServerType.ToString();
 
-                Task task0 = new Task(ExecutorOrdersThreadArea);
-                task0.Start();
+                Task task1 = new Task(PrimeThreadArea);
+                task1.Start();
 
-                Task task = new Task(PrimeThreadArea);
-                task.Start();
+                Task task2 = new Task(AnalysisServerAndNonTradePeriodsCheckThread);
+                task2.Start();
+
+                Task task3 = new Task(ExecutorOrdersThreadArea);
+                task3.Start();
+
+                Task task4 = new Task(MyTradesBeepThread);
+                task4.Start();
 
                 Task.Run(() => HighPriorityDataThreadArea());
                 Task.Run(() => MediumPriorityDataThreadArea());
                 Task.Run(() => LowPriorityDataThreadArea());
-
-                Task task3 = new Task(MyTradesBeepThread);
-                task3.Start();
 
                 _serverIsCreated = true;
 
@@ -205,6 +320,8 @@ namespace OsEngine.Market.Servers
                 _ordersHub.ActiveStateOrderCheckStatusEvent += _ordersHub_ActiveStateOrderCheckStatusEvent;
                 _ordersHub.LostOrderEvent += _ordersHub_LostOrderEvent;
                 _ordersHub.LostMyTradesEvent += _ordersHub_LostMyTradesEvent;
+
+                _nonTradePeriods = new NonTradePeriods(ServerNameUnique);
 
                 ComparePositionsModule = new ComparePositionsModule(this);
                 ComparePositionsModule.LogMessageEvent += SendLogMessage;
@@ -356,7 +473,7 @@ namespace OsEngine.Market.Servers
         /// <summary>
         /// create STRING server parameter
         /// </summary>
-        public void CreateParameterString(string name, string param)
+        public ServerParameterString CreateParameterString(string name, string param)
         {
             ServerParameterString newParam = new ServerParameterString();
             newParam.Name = name;
@@ -373,12 +490,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create INT server parameter
         /// </summary>
-        public void CreateParameterInt(string name, int param)
+        public ServerParameterInt CreateParameterInt(string name, int param)
         {
             ServerParameterInt newParam = new ServerParameterInt();
             newParam.Name = name;
@@ -395,12 +514,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create ENUM server parameter
         /// </summary>
-        public void CreateParameterEnum(string name, string value, List<string> collection)
+        public ServerParameterEnum CreateParameterEnum(string name, string value, List<string> collection)
         {
             ServerParameterEnum newParam = new ServerParameterEnum();
             newParam.Name = name;
@@ -418,12 +539,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create DECIMAL server parameter
         /// </summary>
-        public void CreateParameterDecimal(string name, decimal param)
+        public ServerParameterDecimal CreateParameterDecimal(string name, decimal param)
         {
             ServerParameterDecimal newParam = new ServerParameterDecimal();
             newParam.Name = name;
@@ -440,12 +563,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create BOOL server parameter
         /// </summary>
-        public void CreateParameterBoolean(string name, bool param)
+        public ServerParameterBool CreateParameterBoolean(string name, bool param)
         {
             ServerParameterBool newParam = new ServerParameterBool();
             newParam.Name = name;
@@ -463,12 +588,14 @@ namespace OsEngine.Market.Servers
 
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create PASSWORD server parameter
         /// </summary>
-        public void CreateParameterPassword(string name, string param)
+        public ServerParameterPassword CreateParameterPassword(string name, string param)
         {
             ServerParameterPassword newParam = new ServerParameterPassword();
             newParam.Name = name;
@@ -485,12 +612,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create PATH TO FILE server parameter
         /// </summary>
-        public void CreateParameterPath(string name)
+        public ServerParameterPath CreateParameterPath(string name)
         {
             ServerParameterPath newParam = new ServerParameterPath();
             newParam.Name = name;
@@ -506,12 +635,14 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
         /// create Button server parameter
         /// </summary>
-        public void CreateParameterButton(string name)
+        public ServerParameterButton CreateParameterButton(string name)
         {
             ServerParameterButton newParam = new ServerParameterButton();
             newParam.Name = name;
@@ -527,6 +658,8 @@ namespace OsEngine.Market.Servers
             }
 
             newParam.ValueChange += userChangeParameter_ValueChange;
+
+            return newParam;
         }
 
         /// <summary>
@@ -766,6 +899,7 @@ namespace OsEngine.Market.Servers
                 {
                     _serverConnectStatus = value;
                     SendLogMessage(_serverConnectStatus + " " + OsLocalization.Market.Message7, LogMessageType.Connect);
+
                     if (ConnectStatusChangeEvent != null)
                     {
                         ConnectStatusChangeEvent(_serverConnectStatus.ToString());
@@ -946,17 +1080,19 @@ namespace OsEngine.Market.Servers
         /// </summary>
         private void _serverRealization_Disconnected()
         {
-            if (ServerStatus == ServerConnectStatus.Disconnect)
-            {
-                return;
-            }
-            SendLogMessage(OsLocalization.Market.Message12, LogMessageType.System);
-            ServerStatus = ServerConnectStatus.Disconnect;
-
             if (_serverRealization.ServerStatus != ServerConnectStatus.Disconnect)
             {
                 _serverRealization.ServerStatus = ServerConnectStatus.Disconnect;
             }
+
+            if (ServerStatus == ServerConnectStatus.Disconnect)
+            {
+                return;
+            }
+
+            SendLogMessage(OsLocalization.Market.Message12, LogMessageType.System);
+
+            ServerStatus = ServerConnectStatus.Disconnect;
 
             if (NeedToReconnectEvent != null)
             {
@@ -1036,11 +1172,13 @@ namespace OsEngine.Market.Servers
         /// <summary>
         /// the place where connection is controlled. look at data streams
         /// </summary>
-        private void PrimeThreadArea()
+        private async void PrimeThreadArea()
         {
             while (true)
             {
-                Thread.Sleep(1000);
+
+                await Task.Delay(1000);
+
                 try
                 {
                     if (ServerRealization == null)
@@ -1048,10 +1186,30 @@ namespace OsEngine.Market.Servers
                         continue;
                     }
 
-                    if ((ServerRealization.ServerStatus != ServerConnectStatus.Connect)
-                        && _serverStatusNeed == ServerConnectStatus.Connect &&
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
+                    if ((ServerRealization.ServerStatus != ServerConnectStatus.Connect
+                        || ServerStatus != ServerConnectStatus.Connect) &&
+                        _serverStatusNeed == ServerConnectStatus.Connect &&
                        LastStartServerTime.AddSeconds(100) < DateTime.Now)
                     {
+                        GetNonTradePeriod();
+
+                        if (_isNonTradingPeriodNow)
+                        {
+                            if (ConnectStatusChangeEvent != null)
+                            {
+                                ConnectStatusChangeEvent(_serverConnectStatus.ToString());
+                            }
+
+                            LastStartServerTime = DateTime.Now;
+                            SendLogMessage(OsLocalization.Market.Message104, LogMessageType.System);
+                            continue;
+                        }
+
                         SendLogMessage(OsLocalization.Market.Message8, LogMessageType.System);
                         ServerRealization.Dispose();
                         _subscribeSecurities.Clear();
@@ -1083,16 +1241,20 @@ namespace OsEngine.Market.Servers
 
                         LastStartServerTime = DateTime.Now;
 
-                        NeedToReconnectEvent?.Invoke();
+                        if (NeedToReconnectEvent != null)
+                        {
+                            Thread worker = new Thread(SendReconnectEvent);
+                            worker.Start();
+                        }
 
                         continue;
                     }
 
-                    if (ServerRealization.ServerStatus == ServerConnectStatus.Connect && _serverStatusNeed == ServerConnectStatus.Disconnect)
+                    if (ServerRealization.ServerStatus == ServerConnectStatus.Connect
+                        && _serverStatusNeed == ServerConnectStatus.Disconnect)
                     {
                         SendLogMessage(OsLocalization.Market.Message9, LogMessageType.System);
                         ServerRealization.Dispose();
-
                         DeleteCandleManager();
 
                         continue;
@@ -1119,18 +1281,6 @@ namespace OsEngine.Market.Servers
                     {
                         ServerRealization.GetSecurities();
                     }
-
-                    if (_lastDateTimeServer.Date != DateTime.Now.Date)
-                    {
-                        HasConnectionMessageBeenSent = false;
-                        HasFirstOrderMessageBeenSent = false;
-                        _lastDateTimeServer = DateTime.Now.Date;
-                    }
-
-                    if (HasConnectionMessageBeenSent == false)
-                    {
-                        SendMessageConnectorConnectInAnalysisServer();
-                    }
                 }
                 catch (Exception error)
                 {
@@ -1149,18 +1299,15 @@ namespace OsEngine.Market.Servers
 
                     DeleteCandleManager();
 
-                    Thread.Sleep(5000);
-                    // reconnect / переподключаемся
-
-                    Task task = new Task(PrimeThreadArea);
-                    task.Start();
+                    await Task.Delay(2000);
 
                     if (NeedToReconnectEvent != null)
                     {
-                        NeedToReconnectEvent();
+                        Thread worker = new Thread(SendReconnectEvent);
+                        worker.Start();
                     }
 
-                    return;
+                    await Task.Delay(3000);
                 }
             }
         }
@@ -1188,12 +1335,34 @@ namespace OsEngine.Market.Servers
         /// </summary>
         private void DeleteCandleManager()
         {
-            if (_candleManager != null)
+            try
             {
-                _candleManager.CandleUpdateEvent -= _candleManager_CandleUpdateEvent;
-                _candleManager.LogMessageEvent -= SendLogMessage;
-                _candleManager.Dispose();
-                _candleManager = null;
+                if (_candleManager != null)
+                {
+                    _candleManager.CandleUpdateEvent -= _candleManager_CandleUpdateEvent;
+                    _candleManager.LogMessageEvent -= SendLogMessage;
+                    _candleManager.Dispose();
+                    _candleManager = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void SendReconnectEvent()
+        {
+            try
+            {
+                if (NeedToReconnectEvent != null)
+                {
+                    NeedToReconnectEvent();
+                }
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -1207,6 +1376,17 @@ namespace OsEngine.Market.Servers
             {
                 try
                 {
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
+                    if (_ordersHub == null)
+                    {
+                        await Task.Delay(1);
+                        continue;
+                    }
+
                     bool workDone = false;
 
                     if (!_ordersToSend.IsEmpty)
@@ -1298,12 +1478,14 @@ namespace OsEngine.Market.Servers
                         {
                             return;
                         }
+
                         await Task.Delay(1);
                     }
                 }
                 catch (Exception error)
                 {
                     SendLogMessage(error.ToString(), LogMessageType.Error);
+                    await Task.Delay(2000);
                 }
             }
         }
@@ -1314,61 +1496,40 @@ namespace OsEngine.Market.Servers
             {
                 try
                 {
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
                     bool workDone = false;
 
                     if (!_tradesToSend.IsEmpty)
                     {
                         workDone = true;
-                        List<Trade> trades;
+                        Trade trades;
 
                         if (_tradesToSend.TryDequeue(out trades))
                         {
-                            List<List<Trade>> list = new List<List<Trade>>();
-                            list.Add(trades);
-
-                            while (_tradesToSend.Count != 0)
+                            if (_isNonTradingPeriodNow)
                             {
-                                List<Trade> newTrades = null;
-
-                                if (_tradesToSend.TryDequeue(out newTrades))
-                                {
-                                    bool isInArray = false;
-
-                                    for (int i = 0; i < list.Count; i++)
-                                    {
-                                        if (list[i][0].SecurityNameCode == newTrades[0].SecurityNameCode)
-                                        {
-                                            list[i] = newTrades;
-                                            isInArray = true;
-                                        }
-                                    }
-
-                                    if (isInArray == false)
-                                    {
-                                        list.Add(newTrades);
-                                    }
-                                }
+                                continue;
                             }
 
-                            for (int i = 0; i < list.Count; i++)
+                            if (NewTradeEvent != null)
                             {
-                                if (_needToCheckDataFeedOnDisconnect != null
-                                    && _needToCheckDataFeedOnDisconnect.Value)
-                                {
-                                    SecurityFlowTime tradeTime = new SecurityFlowTime();
-                                    tradeTime.SecurityName = list[i][0].SecurityNameCode;
-                                    tradeTime.LastTimeTrade = DateTime.Now;
-                                    _securitiesFeedFlow.Enqueue(tradeTime);
-                                }
+                                NewTradeEvent(trades);
+                            }
 
-                                if (NewTradeEvent != null)
-                                {
-                                    NewTradeEvent(list[i]);
-                                }
+                            if (_needToCheckDataFeedOnDisconnect != null
+                                && _needToCheckDataFeedOnDisconnect.Value)
+                            {
+                                SecurityFlowTime tradeTime = new SecurityFlowTime();
+                                tradeTime.SecurityName = trades.SecurityNameCode;
+                                tradeTime.LastTimeTrade = DateTime.Now;
+                                _securitiesFeedFlow.Enqueue(tradeTime);
                             }
 
                             if (_needToRemoveTradesFromMemory.Value == true && _allTrades != null)
-
                             {
                                 for (int i = 0; i < _allTrades.Length; i++)
                                 {
@@ -1393,18 +1554,21 @@ namespace OsEngine.Market.Servers
                         {
                             if (_marketDepthsToSend.Count < 1000)
                             {
-                                if (NewMarketDepthEvent != null)
+                                if (!_isNonTradingPeriodNow)
                                 {
-                                    NewMarketDepthEvent(depth);
-                                }
+                                    if (NewMarketDepthEvent != null)
+                                    {
+                                        NewMarketDepthEvent(depth);
+                                    }
 
-                                if (_needToCheckDataFeedOnDisconnect != null
-                                    && _needToCheckDataFeedOnDisconnect.Value)
-                                {
-                                    SecurityFlowTime tradeTime = new SecurityFlowTime();
-                                    tradeTime.SecurityName = depth.SecurityNameCode;
-                                    tradeTime.LastTimeMarketDepth = DateTime.Now;
-                                    _securitiesFeedFlow.Enqueue(tradeTime);
+                                    if (_needToCheckDataFeedOnDisconnect != null
+                                        && _needToCheckDataFeedOnDisconnect.Value)
+                                    {
+                                        SecurityFlowTime tradeTime = new SecurityFlowTime();
+                                        tradeTime.SecurityName = depth.SecurityNameCode;
+                                        tradeTime.LastTimeMarketDepth = DateTime.Now;
+                                        _securitiesFeedFlow.Enqueue(tradeTime);
+                                    }
                                 }
                             }
                             else
@@ -1439,6 +1603,8 @@ namespace OsEngine.Market.Servers
 
                                 for (int i = 0; i < list.Count; i++)
                                 {
+                                    if (_isNonTradingPeriodNow) break;
+
                                     if (_needToCheckDataFeedOnDisconnect != null
                                     && _needToCheckDataFeedOnDisconnect.Value)
                                     {
@@ -1468,7 +1634,7 @@ namespace OsEngine.Market.Servers
                         {
                             if (_bidAskToSend.Count < 1000)
                             {
-                                if (NewBidAskIncomeEvent != null)
+                                if (!_isNonTradingPeriodNow && NewBidAskIncomeEvent != null)
                                 {
                                     NewBidAskIncomeEvent(bidAsk.Bid, bidAsk.Ask, bidAsk.Security);
                                 }
@@ -1504,6 +1670,8 @@ namespace OsEngine.Market.Servers
 
                                 for (int i = 0; i < list.Count; i++)
                                 {
+                                    if (_isNonTradingPeriodNow) break;
+
                                     if (NewBidAskIncomeEvent != null)
                                     {
                                         NewBidAskIncomeEvent(list[i].Bid, list[i].Ask, list[i].Security);
@@ -1521,6 +1689,7 @@ namespace OsEngine.Market.Servers
                         {
                             return;
                         }
+
                         await Task.Delay(1);
                     }
                 }
@@ -1537,6 +1706,11 @@ namespace OsEngine.Market.Servers
             {
                 try
                 {
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
                     bool workDone = false;
 
                     if (!_securitiesToSend.IsEmpty)
@@ -1579,6 +1753,7 @@ namespace OsEngine.Market.Servers
 
                         while (_candleSeriesToSend.TryDequeue(out series))
                         {
+
                             if (NewCandleIncomeEvent != null)
                             {
                                 NewCandleIncomeEvent(series);
@@ -1722,6 +1897,7 @@ namespace OsEngine.Market.Servers
                         {
                             return;
                         }
+
                         await Task.Delay(1);
                     }
                 }
@@ -1744,7 +1920,7 @@ namespace OsEngine.Market.Servers
         /// <summary>
         /// queue of ticks
         /// </summary>
-        private ConcurrentQueue<List<Trade>> _tradesToSend = new ConcurrentQueue<List<Trade>>();
+        private ConcurrentQueue<Trade> _tradesToSend = new ConcurrentQueue<Trade>();
 
         /// <summary>
         /// queue of new or updated portfolios
@@ -1971,6 +2147,8 @@ namespace OsEngine.Market.Servers
             ServerRealization.GetSecurities();
         }
 
+        private Dictionary<string, Security> _securitiesDictionary = new Dictionary<string, Security>();
+
         /// <summary>
         /// often used securities. optimizes access to securities
         /// </summary>
@@ -2008,12 +2186,18 @@ namespace OsEngine.Market.Servers
                 }
             }
 
-            for (int i = 0; i < _securities.Count; i++)
+            try
             {
-                if (_securities[i].Name == securityName)
+                Security mySecurity = null;
+
+                if (_securitiesDictionary.TryGetValue(securityName, out mySecurity))
                 {
-                    return _securities[i];
+                    return mySecurity;
                 }
+            }
+            catch
+            {
+                // ignore
             }
 
             return null;
@@ -2098,6 +2282,13 @@ namespace OsEngine.Market.Servers
                         {
                             _securities.Add(securities[i]);
                         }
+
+                        Security mySecurity;
+
+                        if (_securitiesDictionary.TryGetValue(securities[i].Name, out mySecurity) == false)
+                        {
+                            _securitiesDictionary.Add(securities[i].Name, securities[i]);
+                        }
                     }
                     else
                     {
@@ -2133,7 +2324,7 @@ namespace OsEngine.Market.Servers
 
         private SecuritiesUi _securitiesUi;
 
-        private void AServer_UserClickButton()
+        private void AServer_UserClickSecuritiesUiButton()
         {
             if (_securitiesUi == null)
             {
@@ -2186,6 +2377,7 @@ namespace OsEngine.Market.Servers
                             securities[j].PriceLimitHigh = curSaveSec.PriceLimitHigh;
                             securities[j].PriceLimitLow = curSaveSec.PriceLimitLow;
                             securities[j].MarginBuy = curSaveSec.MarginBuy;
+                            securities[j].MarginSell = curSaveSec.MarginSell;
                             securities[j].Strike = curSaveSec.Strike;
 
                             break;
@@ -2302,20 +2494,22 @@ namespace OsEngine.Market.Servers
 
                     for (int i = 0; _securities != null && i < _securities.Count; i++)
                     {
-                        if (_securities[i] == null)
+                        Security securityCurrent = _securities[i];
+
+                        if (securityCurrent == null)
                         {
                             continue;
                         }
-                        if (_securities[i].Name == securityName &&
-                            (_securities[i].NameClass == securityClass))
+                        if (securityCurrent.Name == securityName &&
+                            (securityCurrent.NameClass == securityClass))
                         {
-                            security = _securities[i];
+                            security = securityCurrent;
                             break;
                         }
-                        if (_securities[i].Name == securityName &&
+                        if (securityCurrent.Name == securityName &&
                             (securityClass == null))
                         {
-                            security = _securities[i];
+                            security = securityCurrent;
                             break;
                         }
                     }
@@ -2398,6 +2592,12 @@ namespace OsEngine.Market.Servers
         /// </summary>
         private void _candleManager_CandleUpdateEvent(CandleSeries series)
         {
+            if (series.IsMergedByCandlesFromFile == false
+                && series.CandleCreateMethodType == "TimeShiftCandle")
+            {
+                series.IsMergedByCandlesFromFile = true;
+            }
+
             if (series.IsMergedByCandlesFromFile == false)
             {
                 series.IsMergedByCandlesFromFile = true;
@@ -2405,7 +2605,62 @@ namespace OsEngine.Market.Servers
                 if (_needToSaveCandlesParam.Value == true)
                 {
                     List<Candle> candlesStorage = _candleStorage.GetCandles(series.Specification, _needToLoadCandlesCountParam.Value);
-                    series.CandlesAll = series.CandlesAll.Merge(candlesStorage);
+
+                    if (series.TimeFrameBuilder.CandleMarketDataType == CandleMarketDataType.MarketDepth)
+                    {
+                        // нужно вставками прогружать каждую свечу по отдельности. 
+                        series.CandlesAll = series.CandlesAll.Merge(candlesStorage);
+
+                        for (int i = 0; candlesStorage != null && i < candlesStorage.Count; i++)
+                        {
+                            Candle candle = candlesStorage[i];
+
+                            bool isInArray = false;
+
+                            for (int j = 0; j < series.CandlesAll.Count; j++)
+                            {
+                                if (series.CandlesAll[j].TimeStart == candle.TimeStart)
+                                {
+                                    series.CandlesAll[j] = candle;
+                                    isInArray = true;
+                                    break;
+                                }
+                                else if (j == 0
+                                   && candle.TimeStart < series.CandlesAll[j].TimeStart)
+                                {
+                                    series.CandlesAll.Insert(j, candle);
+                                    isInArray = true;
+                                    break;
+                                }
+                                else if (j != 0
+                                    && candle.TimeStart > series.CandlesAll[j - 1].TimeStart
+                                    && candle.TimeStart < series.CandlesAll[j].TimeStart)
+                                {
+                                    series.CandlesAll.Insert(j, candle);
+                                    isInArray = true;
+                                    break;
+                                }
+                            }
+
+                            if (isInArray == false)
+                            {
+                                series.CandlesAll.Add(candle);
+                            }
+                        }
+
+                        if (series.CandlesAll.Count > _needToLoadCandlesCountParam.Value)
+                        {
+                            series.CandlesAll =
+                                series.CandlesAll.GetRange(
+                                    series.CandlesAll.Count - _needToLoadCandlesCountParam.Value,
+                                    _needToLoadCandlesCountParam.Value);
+                        }
+
+                    }
+                    else
+                    {
+                        series.CandlesAll = series.CandlesAll.Merge(candlesStorage);
+                    }
 
                     List<Candle> candlesAll = series.CandlesAll;
 
@@ -2602,6 +2857,11 @@ namespace OsEngine.Market.Servers
                 try
                 {
                     Thread.Sleep(1000);
+
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
 
                     if (MainWindow.ProccesIsWorked == false)
                     {
@@ -2937,6 +3197,82 @@ namespace OsEngine.Market.Servers
             }
         }
 
+        /// <summary>
+        /// take historical depths .qsh format
+        /// взять исторические стаканы в формате .qsh
+        /// </summary>
+        List<string> IServer.GetQshHistoryFileToSecurity(string securityName, string securityClass, DateTime startTime, DateTime endTime, DateTime actualTime, bool needToUpdete)
+        {
+            try
+            {
+                if (Securities == null)
+                {
+                    return null;
+                }
+
+                if (LastStartServerTime != DateTime.MinValue &&
+                    LastStartServerTime.AddSeconds(5) > DateTime.Now)
+                {
+                    return null;
+                }
+
+                if (actualTime == DateTime.MinValue)
+                {
+                    actualTime = startTime;
+                }
+
+                if (ServerStatus != ServerConnectStatus.Connect)
+                {
+                    return null;
+                }
+
+                Security security = null;
+
+                for (int i = 0; _securities != null && i < _securities.Count; i++)
+                {
+                    if (_securities[i].Name == securityName &&
+                        _securities[i].NameClass == securityClass)
+                    {
+                        security = _securities[i];
+                        break;
+                    }
+                }
+
+                if (security == null)
+                {
+                    for (int i = 0; _securities != null && i < _securities.Count; i++)
+                    {
+                        if (string.IsNullOrEmpty(_securities[i].NameId) == false &&
+                            _securities[i].NameId == securityName)
+                        {
+                            security = _securities[i];
+                            break;
+                        }
+                    }
+                    if (security == null)
+                    {
+                        return null;
+                    }
+                }
+
+                List<string> qshFilesPaths = null;
+
+                lock (_loadDataLocker)
+                {
+                    qshFilesPaths = ServerRealization.GetQshHistoryFileToSecurity(security, startTime, endTime, actualTime);
+                }
+                return qshFilesPaths;
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(
+                    "AServer. GetQshHistoryFileToSecurity method error: " + ex.ToString(),
+                    LogMessageType.Error);
+
+                return null;
+            }
+        }
+
         #endregion
 
         #region Market depth
@@ -2951,10 +3287,7 @@ namespace OsEngine.Market.Servers
         /// </summary>
         private string _depthsArrayLocker = "depthsLocker";
 
-        /// <summary>
-        /// last bid and ask values by securities
-        /// </summary>
-        private List<BidAskSender> _lastBidAskValues = new List<BidAskSender>();
+        private Dictionary<string, BidAskSender> _lastBidAskValuesDictionary = new Dictionary<string, BidAskSender>();
 
         /// <summary>
         /// new depth event
@@ -2979,11 +3312,6 @@ namespace OsEngine.Market.Servers
                     myDepth.Bids.Count == 0))
                 {
                     return;
-                }
-
-                if (myDepth.SecurityNameCode == "LQDT")
-                {
-
                 }
 
                 TrySendMarketDepthEvent(myDepth);
@@ -3066,48 +3394,26 @@ namespace OsEngine.Market.Servers
                 return;
             }
 
-            Security sec = GetSecurityForName(newMarketDepth.SecurityNameCode, "");
+            BidAskSender newSender = null;
 
-            if (sec == null)
+            if (!_lastBidAskValuesDictionary.TryGetValue(newMarketDepth.SecurityNameCode, out newSender))
             {
-                return;
-            }
+                Security sec = GetSecurityForName(newMarketDepth.SecurityNameCode, "");
 
-            for (int i = 0; i < _lastBidAskValues.Count; i++)
-            {
-                if (_lastBidAskValues[i].Security.Name == sec.Name)
+                if (sec == null)
                 {
-                    if (_lastBidAskValues[i].Bid == bestBid &&
-                        _lastBidAskValues[i].Ask == bestAsk)
-                    {
-                        return;
-                    }
+                    return;
                 }
+
+                newSender = new BidAskSender();
+                newSender.Security = sec;
+                _lastBidAskValuesDictionary.Add(sec.Name, newSender);
             }
 
-            BidAskSender newSender = new BidAskSender();
             newSender.Bid = bestBid;
             newSender.Ask = bestAsk;
-            newSender.Security = sec;
 
             _bidAskToSend.Enqueue(newSender);
-
-            bool isInArray = false;
-
-            for (int i = 0; i < _lastBidAskValues.Count; i++)
-            {
-                if (_lastBidAskValues[i].Security.Name == sec.Name)
-                {
-                    _lastBidAskValues[i] = newSender;
-                    isInArray = true;
-                    break;
-                }
-            }
-
-            if (isInArray == false)
-            {
-                _lastBidAskValues.Add(newSender);
-            }
         }
 
         /// <summary>
@@ -3210,6 +3516,9 @@ namespace OsEngine.Market.Servers
 
                 lock (_newTradesLocker)
                 {
+                    _tradesToSend.Enqueue(trade);
+
+
                     // save / сохраняем
                     if (_allTrades == null)
                     {
@@ -3273,8 +3582,6 @@ namespace OsEngine.Market.Servers
                             myList = allTradesNew[allTradesNew.Length - 1];
                             _allTrades = allTradesNew;
                         }
-
-                        _tradesToSend.Enqueue(myList);
                     }
                 }
             }
@@ -3327,7 +3634,7 @@ namespace OsEngine.Market.Servers
         /// <summary>
         /// new trade event
         /// </summary>
-        public event Action<List<Trade>> NewTradeEvent;
+        public event Action<Trade> NewTradeEvent;
 
         #endregion
 
@@ -3355,6 +3662,12 @@ namespace OsEngine.Market.Servers
             while (true)
             {
                 await Task.Delay(2000);
+
+                if (IsDeleted == true)
+                {
+                    return;
+                }
+
                 if (MainWindow.ProccesIsWorked == false)
                 {
                     return;
@@ -3406,6 +3719,11 @@ namespace OsEngine.Market.Servers
             {
                 try
                 {
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
                     if (_ordersToExecute.IsEmpty == true)
                     {
                         await Task.Delay(1);
@@ -3612,7 +3930,7 @@ namespace OsEngine.Market.Servers
                 if (_portfolios == null ||
                     _portfolios.Count == 0)
                 {
-                    SendLogMessage("AServer Error. You can't Execute order when Portfolious is null "
+                    SendLogMessage("AServer Error. You can't Execute order when Portfolio is null "
                        + order.NumberUser, LogMessageType.Error);
                     order.State = OrderStateType.Fail;
                     _ordersToSend.Enqueue(order);
@@ -3985,6 +4303,18 @@ namespace OsEngine.Market.Servers
             }
         }
 
+        private void _serverRealization_ForceCheckOrdersAfterReconnect()
+        {
+            try
+            {
+                _ordersHub.ForceCheckOrdersAfterReconnect();
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
         #endregion
 
         #region Orders private data interface 
@@ -4319,6 +4649,46 @@ namespace OsEngine.Market.Servers
 
         #region SendMessageAnalysisServer
 
+        private async void AnalysisServerAndNonTradePeriodsCheckThread()
+        {
+            while (true)
+            {
+                try
+                {
+                    await Task.Delay(1000);
+
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
+                    if (this.ServerStatus != ServerConnectStatus.Connect)
+                    {
+                        continue;
+                    }
+
+                    GetNonTradePeriod();
+
+                    if (_lastDateTimeServer.Date != DateTime.Now.Date)
+                    {
+                        HasConnectionMessageBeenSent = false;
+                        HasFirstOrderMessageBeenSent = false;
+                        _lastDateTimeServer = DateTime.Now.Date;
+                    }
+
+                    if (HasConnectionMessageBeenSent == false)
+                    {
+                        SendMessageConnectorConnectInAnalysisServer();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SendLogMessage(ex.ToString(), LogMessageType.Error);
+                    await Task.Delay(5000);
+                }
+            }
+        }
+
         private bool HasConnectionMessageBeenSent = false;
 
         private bool HasFirstOrderMessageBeenSent = false;
@@ -4395,6 +4765,387 @@ namespace OsEngine.Market.Servers
             {
                 // игнор
             }
+        }
+
+        #endregion
+
+        #region Non trade periods
+
+        private NonTradePeriods _nonTradePeriods;
+
+        private bool _isNonTradingPeriodNow;
+
+        private void AServer_UserClickNonTradePeriodsUiButton()
+        {
+            if (_nonTradePeriods != null)
+            {
+                _nonTradePeriods.ShowDialog();
+            }
+        }
+
+        private void GetNonTradePeriod()
+        {
+            try
+            {
+                if (_nonTradePeriods == null)
+                {
+                    return;
+                }
+
+                if (!_nonTradePeriods.CanTradeThisTime(DateTime.Now))
+                {
+                    if (_isNonTradingPeriodNow != true)
+                    {
+                        _isNonTradingPeriodNow = true;
+
+                        if (ConnectStatusChangeEvent != null)
+                        {
+                            ConnectStatusChangeEvent(_serverConnectStatus.ToString());
+                        }
+                    }
+                }
+                else
+                {
+                    if (_isNonTradingPeriodNow != false)
+                    {
+                        _isNonTradingPeriodNow = false;
+
+                        if (ConnectStatusChangeEvent != null)
+                        {
+                            ConnectStatusChangeEvent(_serverConnectStatus.ToString());
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        public bool IsNonTradePeriod
+        {
+            get
+            {
+                return _isNonTradingPeriodNow;
+            }
+        }
+
+        #endregion
+
+        #region Set Leverage
+
+        private SetLeverageUi _leverageUi;
+
+        public List<SecurityLeverageData> ListLeverageData
+        {
+            get
+            {
+                return _listLeverageData;
+            }
+        }
+
+        private List<SecurityLeverageData> _listLeverageData = new();
+
+        private ConcurrentQueue<SecurityLeverageData> _queueLeverage = new();
+
+        private async void GetListLeverageTask()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (IsDeleted == true)
+                    {
+                        return;
+                    }
+
+                    if (ListLeverageData == null
+                        || _securities == null
+                        || _securities.Count == 0)
+                    {
+                        await Task.Delay(1000);
+                        continue;
+                    }
+
+                    if (ListLeverageData.Count == 0)
+                    {
+                        GetListLeverage();
+                    }
+
+                    if (_serverRealization.ServerStatus == ServerConnectStatus.Disconnect)
+                    {
+                        await Task.Delay(1000);
+                        continue;
+                    }
+
+                    if (_queueLeverage == null ||
+                         _queueLeverage.Count == 0)
+                    {
+                        await Task.Delay(1000);
+                        continue;
+                    }
+
+                    SecurityLeverageData data = null;
+
+                    if (!_queueLeverage.TryDequeue(out data))
+                    {
+                        await Task.Delay(1);
+                        continue;
+                    }
+
+                    SetLeverage(data.Security, data.Leverage);
+
+                    await Task.Delay(1);
+                }
+                catch (Exception ex)
+                {
+                    SendLogMessage(ex.ToString(), LogMessageType.Error);
+                    await Task.Delay(5000);
+                }
+            }
+        }
+
+        private void GetListLeverage()
+        {
+            _listLeverageData.Clear();
+
+            string[] leverageSupportClasses = ServerPermission.Leverage_SupportClasses;
+
+            for (int i = 0; i < _securities.Count; i++)
+            {
+                if (leverageSupportClasses == null)
+                {
+                    continue;
+                }
+
+                if (!leverageSupportClasses.Contains(_securities[i].NameClass))
+                {
+                    continue;
+                }
+
+                SecurityLeverageData data = new();
+                data.Security = _securities[i];
+                data.Leverage = GetLeverageSecurity(_securities[i]);
+
+                _listLeverageData.Add(data);
+            }
+        }
+
+        private decimal GetLeverageSecurity(Security security)
+        {
+            decimal leverage = 0;
+
+            leverage = LoadLeverageFromFile(security);
+
+            if (leverage == 0)
+            {
+                leverage = ServerPermission.Leverage_StandardValue;
+            }
+
+            return leverage;
+        }
+
+        private List<SecurityLeverageData> _listLeverageFromFile;
+
+        private decimal LoadLeverageFromFile(Security security)
+        {
+            try
+            {
+                if (_listLeverageFromFile == null)
+                {
+                    _listLeverageFromFile = new List<SecurityLeverageData>();
+
+
+                    string fileName = ServerNameUnique + "_SecuritiesLeverage";
+
+                    string filePath = @"Engine\ServerDopSettings\" + fileName + ".txt";
+
+                    if (!File.Exists(filePath))
+                    {
+                        return 0;
+                    }
+
+                    using (StreamReader reader = new StreamReader(filePath))
+                    {
+                        string line;
+
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            if (!string.IsNullOrEmpty(line))
+                            {
+                                string[] split = line.Split('|');
+
+                                decimal leverage = 0;
+
+                                if (!decimal.TryParse(split[2].Replace(",", "."), out leverage))
+                                {
+                                    leverage = ServerPermission.Leverage_StandardValue;
+                                }
+
+                                int index = _securities.FindIndex(x => x.Name == split[0] && x.NameClass == split[1]);
+
+                                if (index >= 0)
+                                {
+                                    SecurityLeverageData list = new();
+                                    list.Security = _securities[index];
+                                    list.Leverage = leverage;
+
+                                    _listLeverageFromFile.Add(list);
+                                }
+                            }
+                        }
+                        reader.Close();
+                    }
+                }
+
+                for (int i = 0; i < _listLeverageFromFile.Count; i++)
+                {
+                    if (security.Name == _listLeverageFromFile[i].Security.Name &&
+                        security.NameClass == _listLeverageFromFile[i].Security.NameClass)
+                    {
+                        return _listLeverageFromFile[i].Leverage;
+                    }
+                }
+
+                return 0;
+
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+                return 0;
+            }
+        }
+
+        public decimal GetLeverage(Security security)
+        {
+            try
+            {
+                int index = _listLeverageData.FindIndex(x => x.Security == security);
+
+                if (index >= 0)
+                {
+                    return _listLeverageData[index].Leverage;
+                }
+
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+                return 0;
+            }
+        }
+
+        public void SetLeverage(Security security, decimal leverage)
+        {
+            try
+            {
+                int index = _listLeverageData.FindIndex(x => x.Security == security);
+
+                if (index >= 0)
+                {
+                    _listLeverageData[index].Leverage = leverage;
+
+                    SetLeverageOnExchange(_listLeverageData[index]);
+                    SaveLeverageToFile();
+                }
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        private void SetLeverageOnExchange(SecurityLeverageData data)
+        {
+            _serverRealization.SetLeverage(data.Security, data.Leverage);
+        }
+
+        private void SaveLeverageToFile()
+        {
+            try
+            {
+                if (Directory.Exists(@"Engine\ServerDopSettings\") == false)
+                {
+                    Directory.CreateDirectory(@"Engine\ServerDopSettings\");
+                }
+
+                string fileName = ServerNameUnique + "_SecuritiesLeverage";
+
+                string filePath = @"Engine\ServerDopSettings\" + fileName + ".txt";
+
+                if (_listLeverageData == null || _listLeverageData.Count == 0)
+                {
+                    return;
+                }
+
+                using (StreamWriter writer = new StreamWriter(filePath, false))
+                {
+                    for (int i = 0; i < _listLeverageData.Count; i++)
+                    {
+                        string str = "";
+
+                        str += _listLeverageData[i].Security.Name;
+                        str += "|" + _listLeverageData[i].Security.NameClass;
+                        str += "|" + _listLeverageData[i].Leverage;
+
+                        writer.WriteLine(str);
+                    }
+
+                    writer.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        private void AServer_UserClickLeverageUiButton()
+        {
+            try
+            {
+                if (_listLeverageData == null || _listLeverageData.Count == 0)
+                {
+                    CustomMessageBoxUi ui = new CustomMessageBoxUi(OsLocalization.Message.HintMessageLeverageButton);
+                    ui.ShowDialog();
+
+                    return;
+                }
+
+                if (_leverageUi == null)
+                {
+                    _leverageUi = new SetLeverageUi(this, _serverRealization, ServerNameUnique);
+                    _leverageUi.Show();
+                    _leverageUi.Closed += _leverageUi_Closed;
+                    _leverageUi.SecurityLeverageDataEvent += _leverageUi_SecurityLeverageDataEvent;
+                }
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void _leverageUi_SecurityLeverageDataEvent(SecurityLeverageData data)
+        {
+            try
+            {
+                _queueLeverage.Enqueue(data);
+            }
+            catch (Exception ex)
+            {
+                SendLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void _leverageUi_Closed(object sender, EventArgs e)
+        {
+            _leverageUi.Closed -= _securitiesUi_Closed;
+            _leverageUi.SecurityLeverageDataEvent -= _leverageUi_SecurityLeverageDataEvent;
+            _leverageUi = null;
         }
 
         #endregion

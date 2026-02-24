@@ -137,6 +137,24 @@ namespace OsEngine.Market.Servers
         /// </summary>
         event Action<List<Security>> SecuritiesChangeEvent;
 
+        /// <summary>
+        /// List of instruments with leverage
+        /// Список инструментов с уровнями плечей
+        /// </summary>
+        List<SecurityLeverageData> ListLeverageData { get; }
+
+        /// <summary>
+        /// get leverage value for instrument
+        /// получить значение плеча по инструменту
+        /// </summary>
+        decimal GetLeverage(Security security);
+
+        /// <summary>
+        /// set leverage value for instrument
+        /// установить значение плеча по инструменту
+        /// </summary>
+        void SetLeverage(Security security, decimal leverage);
+
         #endregion
 
         #region Data subscription
@@ -188,7 +206,7 @@ namespace OsEngine.Market.Servers
         /// new tick
         /// новый тик
         /// </summary>
-        event Action<List<Trade>> NewTradeEvent;
+        event Action<Trade> NewTradeEvent;
 
         /// <summary>
         /// new additional market data
@@ -230,6 +248,13 @@ namespace OsEngine.Market.Servers
         /// взять тиковые данные по инструменту за определённый период
         /// </summary>
         List<Trade> GetTickDataToSecurity(string securityName, string securityClass, DateTime startTime, DateTime endTime, DateTime actualTime,
+            bool needToUpdete);
+
+        /// <summary>
+        /// take historical depths .qsh format
+        /// взять исторические стаканы в формате .qsh
+        /// </summary>
+        List<string> GetQshHistoryFileToSecurity(string securityName, string securityClass, DateTime startTime, DateTime endTime, DateTime actualTime,
             bool needToUpdete);
 
         /// <summary>

@@ -11,6 +11,8 @@ using System.Windows.Controls;
 using System.Windows.Forms;
 using OsEngine.Entity;
 using System.Threading;
+using System.Windows.Threading;
+using OsEngine.Instructions;
 
 namespace OsEngine.Market.Servers
 {
@@ -73,8 +75,70 @@ namespace OsEngine.Market.Servers
 
             RePaintGrids();
 
+            if (InteractiveInstructions.PositionComparisonPosts.AllInstructionsInClass == null
+            || InteractiveInstructions.PositionComparisonPosts.AllInstructionsInClass.Count == 0)
+            {
+                ButtonPositionComparison.Visibility = Visibility.Hidden;
+            }
+            else
+            {
+                ButtonPositionComparison.Click += ButtonPositionComparison_Click;
+            }
+
+            StartButtonBlinkAnimation();
+
             Thread worker = new Thread(RePainterThread);
             worker.Start();
+        }
+
+        private void StartButtonBlinkAnimation()
+        {
+            try
+            {
+                DispatcherTimer timer = new DispatcherTimer();
+                int blinkCount = 0;
+                bool isGreenVisible = true;
+
+                timer.Interval = TimeSpan.FromMilliseconds(300);
+                timer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        if (blinkCount >= 20)
+                        {
+                            timer.Stop();
+                            GreenCollectionPositionComparison.Opacity = 1;
+                            WhiteCollectionPositionComparison.Opacity = 0;
+                            return;
+                        }
+
+                        if (isGreenVisible)
+                        {
+                            GreenCollectionPositionComparison.Opacity = 0;
+                            WhiteCollectionPositionComparison.Opacity = 1;
+                        }
+                        else
+                        {
+                            GreenCollectionPositionComparison.Opacity = 1;
+                            WhiteCollectionPositionComparison.Opacity = 0;
+                        }
+
+                        isGreenVisible = !isGreenVisible;
+                        blinkCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+                        timer.Stop();
+                    }
+                };
+
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
         }
 
         private void ComparePositionsModuleUi_Closed(object sender, EventArgs e)
@@ -365,7 +429,7 @@ namespace OsEngine.Market.Servers
                 }
                 else
                 {
-                    for (int i = 1; i < _grid.Rows.Count; i++)
+                    for (int i = 0; i < _grid.Rows.Count; i++)
                     {
                         TryRePaintRow(_grid.Rows[i], rows[i]);
                     }
@@ -380,7 +444,7 @@ namespace OsEngine.Market.Servers
 
         private void TryRePaintRow(DataGridViewRow oldRow, DataGridViewRow newRow)
         {
-            for (int i = 1; i < oldRow.Cells.Count; i++)
+            for (int i = 1; i < oldRow.Cells.Count && i < newRow.Cells.Count; i++)
             {
                 if (oldRow.Cells[i].Value != newRow.Cells[i].Value)
                 {
@@ -400,7 +464,15 @@ namespace OsEngine.Market.Servers
             DataGridViewRow firstRow = new DataGridViewRow();
             firstRow.Cells.Add(new DataGridViewTextBoxCell());
             firstRow.Cells[0].Value = portfolio.PortfolioName;
+            firstRow.Cells.Add(new DataGridViewTextBoxCell());
+            firstRow.Cells.Add(new DataGridViewTextBoxCell());
+            firstRow.Cells.Add(new DataGridViewTextBoxCell());
+            firstRow.Cells.Add(new DataGridViewTextBoxCell());
+
             rows.Add(firstRow);
+
+            int longAllBots = 0;
+            int shortAllBots = 0;
 
             for (int i = 0; i < portfolio.CompareSecurities.Count; i++)
             {
@@ -429,8 +501,18 @@ namespace OsEngine.Market.Servers
                 nRow.Cells.Add(new DataGridViewTextBoxCell());
                 nRow.Cells[3].Value = portfolio.CompareSecurities[i].RobotsLong.ToStringWithNoEndZero();
 
+                if(portfolio.CompareSecurities[i].RobotsLong > 0)
+                {
+                    longAllBots++;
+                }
+              
                 nRow.Cells.Add(new DataGridViewTextBoxCell());
                 nRow.Cells[4].Value = portfolio.CompareSecurities[i].RobotsShort.ToStringWithNoEndZero();
+
+                if (portfolio.CompareSecurities[i].RobotsShort < 0)
+                {
+                    shortAllBots++;
+                }
 
                 nRow.Cells.Add(new DataGridViewTextBoxCell());
                 nRow.Cells[5].Value = portfolio.CompareSecurities[i].RobotsCommon.ToStringWithNoEndZero();
@@ -458,6 +540,9 @@ namespace OsEngine.Market.Servers
 
                 rows.Add(nRow);
             }
+
+            firstRow.Cells[3].Value = longAllBots;
+            firstRow.Cells[4].Value = shortAllBots;
 
             return rows;
         }
@@ -535,5 +620,49 @@ namespace OsEngine.Market.Servers
 
         #endregion
 
+        #region Posts collection
+
+        private InstructionsUi _instructionsUi;
+
+        private void ButtonPositionComparison_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_instructionsUi == null)
+                {
+                    _instructionsUi = new InstructionsUi(
+                        InteractiveInstructions.PositionComparisonPosts.AllInstructionsInClass, InteractiveInstructions.PositionComparisonPosts.AllInstructionsInClassDescription);
+                    _instructionsUi.Show();
+                    _instructionsUi.Closed += _instructionsUi_Closed;
+                }
+                else
+                {
+                    if (_instructionsUi.WindowState == WindowState.Minimized)
+                    {
+                        _instructionsUi.WindowState = WindowState.Normal;
+                    }
+                    _instructionsUi.Activate();
+                }
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        private void _instructionsUi_Closed(object sender, EventArgs e)
+        {
+            try
+            {
+                _instructionsUi.Closed -= _instructionsUi_Closed;
+                _instructionsUi = null;
+            }
+            catch (Exception ex)
+            {
+                ServerMaster.SendNewLogMessage(ex.ToString(), Logging.LogMessageType.Error);
+            }
+        }
+
+        #endregion
     }
 }

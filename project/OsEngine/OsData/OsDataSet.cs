@@ -4,19 +4,23 @@
 */
 
 using OsEngine.Entity;
-using OsEngine.OsTrader.Panels.Tab;
 using OsEngine.Language;
 using OsEngine.Logging;
 using OsEngine.Market;
 using OsEngine.Market.Servers;
+using OsEngine.Market.Servers.BitMartFutures.Json;
+using OsEngine.Market.Servers.Entity;
+using OsEngine.OsData.BinaryEntity;
+using OsEngine.OsTrader.Panels.Tab;
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
-using System.IO;
-using System.Threading.Tasks;
-using System.Text;
+using System.Collections.Generic;
 using System.Globalization;
-using OsEngine.Market.Servers.Mexc.Json;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace OsEngine.OsData
 {
@@ -53,6 +57,7 @@ namespace OsEngine.OsData
                 {
                     Directory.CreateDirectory("Data\\" + SetName);
                 }
+
                 using (StreamWriter writer = new StreamWriter("Data\\" + SetName + @"\\Settings.txt", false))
                 {
                     writer.WriteLine(BaseSettings.GetSaveStr());
@@ -81,7 +86,6 @@ namespace OsEngine.OsData
 
             try
             {
-
                 if (SecuritiesLoad == null)
                 {
                     SecuritiesLoad = new List<SecurityToLoad>();
@@ -100,10 +104,60 @@ namespace OsEngine.OsData
 
                     reader.Close();
                 }
+
+                if (File.Exists("Data\\" + SetName + @"\\DublicateSettings.txt"))
+                {
+                    IsThereDublicate = true;
+
+                    Dublicator = new SetDublicator();
+                    Dublicator.LoadDublicateSettings("Data\\" + SetName + @"\\DublicateSettings.txt");
+                }
+
+                if (File.Exists("Data\\" + SetName + @"\\UpdateSettings.txt"))
+                {
+                    Updater = new SetUpdater();
+                    Updater.LoadUpdateSettings("Data\\" + SetName + @"\\UpdateSettings.txt");
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // ignored
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        public void LoadSecurityFromFile(string filePath, string setName)
+        {
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
+
+            try
+            {
+                if (SecuritiesLoad == null)
+                {
+                    SecuritiesLoad = new List<SecurityToLoad>();
+                }
+
+                SecuritiesLoad.Clear();
+
+                using (StreamReader reader = new StreamReader(filePath))
+                {
+                    BaseSettings.Load(reader.ReadLine());
+
+                    while (reader.EndOfStream == false)
+                    {
+                        SecuritiesLoad.Add(new SecurityToLoad());
+                        SecuritiesLoad[SecuritiesLoad.Count - 1].Load(reader.ReadLine(), "Set_" + setName);
+                        SecuritiesLoad[SecuritiesLoad.Count - 1].NewLogMessageEvent += SendNewLogMessage;
+                    }
+
+                    reader.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
             }
         }
 
@@ -139,6 +193,18 @@ namespace OsEngine.OsData
             {
                 SecuritiesLoad.Clear();
             }
+
+            if (Dublicator != null)
+            {
+                Dublicator = null;
+
+                IsThereDublicate = false;
+            }
+
+            if (Updater != null)
+            {
+                Updater = null;
+            }
         }
 
         private bool _isDeleted = false;
@@ -151,26 +217,26 @@ namespace OsEngine.OsData
         {
             List<IServer> servers = ServerMaster.GetServers();
 
-            if(servers == null)
+            if (servers == null)
             {
                 return;
             }
 
             IServer myServer = null;
 
-            for(int i = 0;i < servers.Count;i++)
+            for (int i = 0; i < servers.Count; i++)
             {
                 IServer server = servers[i];
 
-                if(server.ServerType == BaseSettings.Source)
+                if (server.ServerType == BaseSettings.Source)
                 {
-                    if(string.IsNullOrEmpty(BaseSettings.SourceName) == false
+                    if (string.IsNullOrEmpty(BaseSettings.SourceName) == false
                         && server.ServerNameAndPrefix.StartsWith(BaseSettings.SourceName))
                     {
                         myServer = server;
                         break;
                     }
-                    else if(string.IsNullOrEmpty(BaseSettings.SourceName) == true)
+                    else if (string.IsNullOrEmpty(BaseSettings.SourceName) == true)
                     {
                         myServer = server;
                         break;
@@ -209,6 +275,7 @@ namespace OsEngine.OsData
                 {
                     SecuritiesLoad = new List<SecurityToLoad>();
                 }
+
                 for (int i = 0; i < ui.SelectedSecurity.Count; i++)
                 {
                     SecurityToLoad record = new SecurityToLoad();
@@ -218,6 +285,8 @@ namespace OsEngine.OsData
                     record.SecExchange = ui.SelectedSecurity[i].Exchange;
                     record.SecNameFull = ui.SelectedSecurity[i].NameFull;
                     record.SetName = SetName;
+                    record.PriceStep = ui.SelectedSecurity[i].PriceStep;
+                    record.VolumeStep = ui.SelectedSecurity[i].VolumeStep;
                     record.NewLogMessageEvent += SendNewLogMessage;
 
                     if (record.SecName == null)
@@ -311,6 +380,83 @@ namespace OsEngine.OsData
             return Math.Round(result, 2);
         }
 
+        private LqdtDataFakeServer _lqdtDataServer;
+
+        public void AddLqdtMoex()
+        {
+            _lqdtDataServer = null;
+
+            CreateLqdtServer("MOEX");
+
+            if (_lqdtDataServer.IsRatesDownloaded == false)
+            {
+                _lqdtDataServer = null;
+                return;
+            }
+
+            SecurityToLoad record = new SecurityToLoad();
+            record.SecName = "LQDTMOEX";
+            record.SecId = "LQDTMOEX";
+            record.SecClass = "LQDT";
+            record.SecExchange = "MOEX";
+            record.SecNameFull = "LQDTMOEX";
+            record.SetName = SetName;
+            record.NewLogMessageEvent += SendNewLogMessage;
+
+            record.CopySettingsFromParam(BaseSettings);
+
+            if (SecuritiesLoad != null && SecuritiesLoad.Find(s => s.SecId == record.SecId) == null)
+            {
+                SecuritiesLoad.Add(record);
+            }
+
+            Save();
+        }
+
+        public void AddLqdtNyse()
+        {
+            _lqdtDataServer = null;
+
+            CreateLqdtServer("NYSE");
+
+            if (_lqdtDataServer.IsRatesDownloaded == false)
+            {
+                _lqdtDataServer = null;
+                return;
+            }
+
+            SecurityToLoad record = new SecurityToLoad();
+            record.SecName = "LQDTNYSE";
+            record.SecId = "LQDTNYSE";
+            record.SecClass = "LQDT";
+            record.SecExchange = "NYSE";
+            record.SecNameFull = "LQDTNYSE";
+            record.SetName = SetName;
+            record.NewLogMessageEvent += SendNewLogMessage;
+
+            record.CopySettingsFromParam(BaseSettings);
+
+            if (SecuritiesLoad != null && SecuritiesLoad.Find(s => s.SecId == record.SecId) == null)
+            {
+                SecuritiesLoad.Add(record);
+            }
+
+            Save();
+        }
+
+        private void CreateLqdtServer(string exchange)
+        {
+            _lqdtDataServer = new LqdtDataFakeServer(exchange);
+
+            _lqdtDataServer.StartServer();
+        }
+
+        public SetDublicator Dublicator { get; set; }
+
+        public bool IsThereDublicate { get; set; }
+
+        public SetUpdater Updater { get; set; }
+
         #endregion
 
         #region Data loading
@@ -318,6 +464,8 @@ namespace OsEngine.OsData
         public List<SecurityToLoad> SecuritiesLoad;
 
         private IServer _myServer;
+
+        public IServer MyServer { get { return _myServer; } }
 
         private async void WorkerArea()
         {
@@ -334,16 +482,7 @@ namespace OsEngine.OsData
                         return;
                     }
 
-                    if (BaseSettings.Regime == DataSetState.Off)
-                    {
-                        // completely off/полностью выключены
-                        continue;
-                    }
-
-                    if (BaseSettings.Regime == DataSetState.On)
-                    {
-                        Process();
-                    }
+                    Process();
                 }
             }
             catch (Exception error)
@@ -355,16 +494,18 @@ namespace OsEngine.OsData
         private void Process()
         {
             if (SecuritiesLoad == null ||
-                SecuritiesLoad.Count == 0)
+            SecuritiesLoad.Count == 0)
             {
                 return;
             }
 
-            if (_myServer == null)
+            if (_myServer == null && BaseSettings.Regime == DataSetState.On)
             {
                 TryFindServer();
                 return;
             }
+
+            if (_myServer == null) return;
 
             if (_myServer.ServerStatus != ServerConnectStatus.Connect)
             {
@@ -383,14 +524,109 @@ namespace OsEngine.OsData
                     return;
                 }
 
-                if (BaseSettings.Regime == DataSetState.Off)
+                if (SecuritiesLoad[i].SecClass == "LQDT")
                 {
-                    break;
-                }
+                    if (_lqdtDataServer == null)
+                    {
+                        CreateLqdtServer(SecuritiesLoad[i].SecExchange);
 
-                SecuritiesLoad[i].Process(_myServer);
+                        if (!_lqdtDataServer.IsRatesDownloaded)
+                        {
+                            _lqdtDataServer = null;
+                            return;
+                        }
+                    }
+
+                    SecuritiesLoad[i].Process(_lqdtDataServer);
+                }
+                else
+                {
+                    SecuritiesLoad[i].Process(_myServer);
+                }
             }
 
+            if (IsThereDublicate && Dublicator != null && Dublicator.Regime == "On")
+            {
+                if (Dublicator.TimeLastCheckSet.Add(Dublicator.UpdatePeriod) < DateTime.Now)
+                {
+                    DateTime timeLastChange = Dublicator.GetLatestFileTime("Data\\" + SetName);
+
+                    if (timeLastChange != DateTime.MinValue && timeLastChange > Dublicator.TimeWriteOriginalSet)
+                    {
+                        Dublicator.UpdateDublicate(SetName);
+
+                        Dublicator.TimeWriteOriginalSet = timeLastChange;
+
+                        Dublicator.SaveDublicateSettings("Data\\" + SetName + @"\\DublicateSettings.txt");
+                    }
+
+                    Dublicator.TimeLastCheckSet = DateTime.Now;
+                }
+            }
+
+            if (Updater != null && Updater.Regime == "On")
+            {
+                if (!Updater.IsUpdateProcess)
+                {
+                    if (DateTime.Now >= Updater.TimeNextUpdate)
+                    {
+                        if (BaseSettings.TimeEnd < DateTime.Now.Date)
+                        {
+                            BaseSettings.TimeEnd = DateTime.Today;
+                        }
+
+                        BaseSettings.NeedToUpdate = true;
+
+                        if (SecuritiesLoad != null)
+                        {
+                            for (int i = 0; i < SecuritiesLoad.Count; i++)
+                            {
+                                SecuritiesLoad[i].CopySettingsFromParam(BaseSettings);
+                            }
+                        }
+
+                        Save();
+
+                        Updater.IsUpdateProcess = true;
+
+                        Updater.TimeNextUpdate = Updater.TimeNextUpdate.Add(Updater.UpdatePeriod);
+
+                        Updater.SaveUpdateSettings("Data\\" + SetName + @"\\UpdateSettings.txt");
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < SecuritiesLoad.Count; i++)
+                    {
+                        for (int j = 0; j < SecuritiesLoad[i].SecLoaders.Count; j++)
+                        {
+                            if (SecuritiesLoad[i].SecLoaders[j].Status == SecurityLoadStatus.Loading
+                                || SecuritiesLoad[i].SecLoaders[j].Status == SecurityLoadStatus.Activate)
+                                return;
+
+                            for (int k = 0; k < SecuritiesLoad[i].SecLoaders[j].DataPies.Count; k++)
+                            {
+                                if (SecuritiesLoad[i].SecLoaders[j].DataPies[k].Status == DataPieStatus.InProcess)
+                                    return;
+                            }
+                        }
+                    }
+
+                    BaseSettings.NeedToUpdate = false;
+
+                    if (SecuritiesLoad != null)
+                    {
+                        for (int i = 0; i < SecuritiesLoad.Count; i++)
+                        {
+                            SecuritiesLoad[i].CopySettingsFromParam(BaseSettings);
+                        }
+                    }
+
+                    Save();
+
+                    Updater.IsUpdateProcess = false;
+                }
+            }
         }
 
         private void TryFindServer()
@@ -449,11 +685,7 @@ namespace OsEngine.OsData
     {
         #region Service
 
-        public SecurityToLoad()
-        {
-
-
-        }
+        public SecurityToLoad() { }
 
         public string SetName = "";
 
@@ -466,6 +698,10 @@ namespace OsEngine.OsData
         public string SecExchange = "";
 
         public string SecNameFull = "";
+
+        public decimal PriceStep = 0;
+
+        public decimal VolumeStep = 0;
 
         public bool IsCollapsed = false;
 
@@ -500,6 +736,7 @@ namespace OsEngine.OsData
             SettingsToLoadSecurities.TimeEnd = param.TimeEnd;
             SettingsToLoadSecurities.MarketDepthDepth = param.MarketDepthDepth;
             SettingsToLoadSecurities.NeedToUpdate = param.NeedToUpdate;
+            SettingsToLoadSecurities.TfMarketDepthHistIsOn = param.TfMarketDepthHistIsOn;
 
             ActivateLoaders();
 
@@ -532,7 +769,7 @@ namespace OsEngine.OsData
             SecLoaders.Clear();
         }
 
-        public void Load(string saveStr)
+        public void Load(string saveStr, string setName = null)
         {
             string[] saveArray = saveStr.Split('~');
 
@@ -541,14 +778,38 @@ namespace OsEngine.OsData
             SecClass = saveArray[2];
             IsCollapsed = Convert.ToBoolean(saveArray[3]);
             SecExchange = saveArray[4];
-            SetName = saveArray[5];
-            SettingsToLoadSecurities.Load(saveArray[6]);
-            if(saveArray.Length > 7)
+
+            if (setName == null)
             {
-                SecNameFull = saveArray[7];
+                SetName = saveArray[5];
             }
-            
-            ActivateLoaders();
+            else
+            {
+                SetName = setName;
+            }
+
+            if (saveArray[6].Contains("False"))
+            {
+                SettingsToLoadSecurities.Load(saveArray[6]);
+                if (saveArray.Length > 7)
+                {
+                    SecNameFull = saveArray[7];
+                }
+                ActivateLoaders();
+            }
+            else
+            {
+                PriceStep = saveArray[6].ToDecimal();
+                VolumeStep = saveArray[7].ToDecimal();
+                SettingsToLoadSecurities.Load(saveArray[8]);
+                if (saveArray.Length > 9)
+                {
+                    SecNameFull = saveArray[9];
+                }
+
+                ActivateLoaders();
+            }
+
         }
 
         public string GetSaveStr()
@@ -559,6 +820,8 @@ namespace OsEngine.OsData
             result += IsCollapsed + "~";
             result += SecExchange + "~";
             result += SetName + "~";
+            result += PriceStep + "~";
+            result += VolumeStep + "~";
             result += SettingsToLoadSecurities.GetSaveStr() + "~";
             result += SecNameFull;
 
@@ -765,7 +1028,7 @@ namespace OsEngine.OsData
                 TryDeleteLoader(TimeFrame.Tick);
             }
 
-            if (SettingsToLoadSecurities.TfMarketDepthIsOn)
+            if (SettingsToLoadSecurities.TfMarketDepthIsOn || SettingsToLoadSecurities.TfMarketDepthHistIsOn)
             {
                 TryCreateLoader(TimeFrame.MarketDepth);
             }
@@ -812,10 +1075,16 @@ namespace OsEngine.OsData
                 return;
             }
 
-            SecurityTfLoader loader = new SecurityTfLoader(SetName, SecName, frame, SecClass, SecId, SecExchange);
+            SecurityTfLoader loader = new SecurityTfLoader(SetName, SecName, frame, SecClass, SecId, SecExchange, PriceStep, VolumeStep);
             loader.TimeStart = SettingsToLoadSecurities.TimeStart;
             loader.TimeEnd = SettingsToLoadSecurities.TimeEnd;
             loader.NewLogMessageEvent += SendNewLogMessage;
+
+            if (frame == TimeFrame.MarketDepth)
+            {
+                loader.MDType = SettingsToLoadSecurities.TfMarketDepthHistIsOn ? MarketDepthsLoaderType.History : MarketDepthsLoaderType.OnLine;
+            }
+
             loader.CreateDataPies();
 
             SecLoaders.Add(loader);
@@ -843,7 +1112,12 @@ namespace OsEngine.OsData
             {
                 if (SettingsToLoadSecurities.Regime == DataSetState.Off)
                 {
-                    return;
+                    if (SecLoaders[i].TimeFrame == TimeFrame.MarketDepth && SettingsToLoadSecurities.TfMarketDepthIsOn)
+                    {
+                        SecLoaders[i].Process(server, SettingsToLoadSecurities);
+                    }
+
+                    continue;
                 }
 
                 SecLoaders[i].Process(server, SettingsToLoadSecurities);
@@ -881,17 +1155,16 @@ namespace OsEngine.OsData
     {
         #region Service
 
-        private SecurityTfLoader()
-        {
-
-        }
+        private SecurityTfLoader() { }
 
         public SecurityTfLoader(string setName,
             string securityName,
             TimeFrame frame,
             string secClass,
             string secId,
-            string exchange)
+            string exchange,
+            decimal priceStep,
+            decimal volumeStep)
         {
             _setName = setName;
             TimeFrame = frame;
@@ -899,6 +1172,8 @@ namespace OsEngine.OsData
             SecClass = secClass;
             SecId = secId;
             Exchange = exchange;
+            PriceStep = priceStep;
+            VolumeStep = volumeStep;
 
             CreatePaths();
         }
@@ -939,15 +1214,12 @@ namespace OsEngine.OsData
 
             _pathMyTxtFile = _pathMyTfFolder + "\\" + SecName.RemoveExcessFromSecurityName() + ".txt";
 
-
-
             _pathMyTempPieInTfFolder = _pathMyTfFolder + "\\Temp";
 
             if (!Directory.Exists(_pathMyTempPieInTfFolder))
             {
                 Directory.CreateDirectory(_pathMyTempPieInTfFolder);
             }
-
         }
 
         public void Delete()
@@ -1016,6 +1288,10 @@ namespace OsEngine.OsData
 
         public string Exchange = "";
 
+        public decimal PriceStep;
+
+        public decimal VolumeStep;
+
         public DateTime TimeStart;
 
         public DateTime TimeEnd;
@@ -1024,12 +1300,15 @@ namespace OsEngine.OsData
 
         public DateTime TimeEndInReal;
 
+        public MarketDepthsLoaderType MDType { get; set; }
+
         public void CheckTimeInSets()
         {
             if (_isDeleted)
             {
                 return;
             }
+
             DateTime start = DateTime.MaxValue;
             DateTime end = DateTime.MinValue;
 
@@ -1148,6 +1427,10 @@ namespace OsEngine.OsData
                 {
                     ProcessTrades(server, param, true);
                 }
+                else if (TimeFrame == TimeFrame.MarketDepth && param.TfMarketDepthHistIsOn)
+                {
+                    ProcessMarketDepthHistory(server, param);
+                }
                 else if (TimeFrame == TimeFrame.MarketDepth)
                 {
                     ProcessMarketDepth(param);
@@ -1181,7 +1464,8 @@ namespace OsEngine.OsData
             {
                 return;
             }
-            if (TimeFrame == TimeFrame.MarketDepth)
+
+            if (TimeFrame == TimeFrame.MarketDepth && MDType == MarketDepthsLoaderType.OnLine)
             {
                 Status = SecurityLoadStatus.Loading;
                 return;
@@ -1206,7 +1490,7 @@ namespace OsEngine.OsData
             {
                 TimeSpan timeInSet = TimeEnd - TimeStart;
 
-                if(timeInSet.TotalDays >= 3)
+                if (timeInSet.TotalDays >= 3)
                 {
                     interval = new TimeSpan(3, 0, 0, 0);
                 }
@@ -1222,6 +1506,12 @@ namespace OsEngine.OsData
                 {
                     interval = new TimeSpan(0, 0, 0, 0);
                 }
+            }
+
+            // QSH стаканы рубим по 10 дней
+            else if (TimeFrame == TimeFrame.MarketDepth && MDType == MarketDepthsLoaderType.History)
+            {
+                interval = new TimeSpan(10, 0, 0, 0);
             }
 
             // 1 минутки рубим на месяца
@@ -1255,7 +1545,7 @@ namespace OsEngine.OsData
                 newPie.Start = timeStart;
                 newPie.End = timeNow;
 
-                if(newPie.End > TimeEnd)
+                if (newPie.End > TimeEnd)
                 {
                     newPie.End = TimeEnd;
                 }
@@ -1278,7 +1568,7 @@ namespace OsEngine.OsData
                 {
                     newPie.UpDateStatus();
                 }
-                else if (TimeFrame == TimeFrame.MarketDepth)
+                else if (TimeFrame == TimeFrame.MarketDepth && MDType == MarketDepthsLoaderType.OnLine)
                 {
                     // делаем ничего
                 }
@@ -1288,8 +1578,9 @@ namespace OsEngine.OsData
                 }
 
                 newCandleDataPies.Add(newPie);
-                
-                if(TimeFrame == TimeFrame.Tick)
+
+                if (TimeFrame == TimeFrame.Tick
+                    || TimeFrame == TimeFrame.MarketDepth && MDType == MarketDepthsLoaderType.History)
                 {
                     timeStart = timeNow.AddDays(1);
                 }
@@ -1709,9 +2000,9 @@ namespace OsEngine.OsData
 
         private void SaveTradeDataExitFile()
         {
-            if (_isDeleted) 
-            { 
-                return; 
+            if (_isDeleted)
+            {
+                return;
             }
 
             string curSaveStrObjectsCount = "";
@@ -1746,7 +2037,7 @@ namespace OsEngine.OsData
                         continue;
                     }
 
-                    if (lastTradeInLastPie != null 
+                    if (lastTradeInLastPie != null
                         && curTrades[0].Time < lastTradeInLastPie.Time)
                     {
                         if (NewLogMessageEvent != null)
@@ -1796,11 +2087,6 @@ namespace OsEngine.OsData
                 return;
             }
 
-            if (param.Regime == DataSetState.Off)
-            {
-                return;
-            }
-
             MarketDepthLoader loader = null;
 
             for (int i = 0; i < MdSources.Count; i++)
@@ -1810,78 +2096,192 @@ namespace OsEngine.OsData
                     && MdSources[i].Depth == param.MarketDepthDepth)
                 {
                     loader = MdSources[i];
+
+                    if (param.Regime == DataSetState.Off)
+                    {
+                        loader.IsLoad = false;
+                        return;
+                    }
+
                     break;
                 }
             }
 
             if (loader == null)
             {
-                loader = new MarketDepthLoader(SecName, SecClass, param.Source, param.SourceName, param.MarketDepthDepth);
+                loader = new MarketDepthLoader(SecName, SecClass, param.Source, param.SourceName, param.MarketDepthDepth, PriceStep, VolumeStep, _pathMyTfFolder);
                 loader.NewLogMessageEvent += SendNewLogMessage;
                 MdSources.Add(loader);
             }
 
-            TrySaveMd(loader);
+            loader.IsLoad = true;
         }
 
-        private void TrySaveMd(MarketDepthLoader source)
+        #endregion
+
+        #region Market Depth History
+
+        private void ProcessMarketDepthHistory(IServer server, SettingsToLoadSecurity param)
         {
-            if (_isDeleted) { return; }
-
-            StringBuilder builder = new StringBuilder();
-
-            if (source.SaveStrings == null)
+            if (_isDeleted)
             {
                 return;
             }
 
-            while (source.SaveStrings.IsEmpty == false)
+            // пробуем создавать куски данных нужные для выгрузки
+
+            if (DataPies == null
+                || DataPies.Count == 0)
             {
-                string str = null;
-
-                if (source.SaveStrings.TryDequeue(out str))
-                {
-                    if (string.IsNullOrEmpty(str))
-                    {
-                        continue;
-                    }
-
-                    if (source.SaveStrings.IsEmpty == false)
-                    {
-                        builder.Append(str + "\r");
-                    }
-                    else
-                    {
-                        builder.Append(str);
-                    }
-                }
+                CreateDataPies();
+                Status = SecurityLoadStatus.Activate;
+                return;
             }
 
-            if (builder.Length == 0)
+            if (DataPies.Count == 0)
             {
                 return;
             }
 
-            if (MainWindow.ProccesIsWorked == false)
-            {
-                return;
-            }
+            // загружаем эти куски из источника
 
-            try
-            {
-                using (StreamWriter writer = new StreamWriter(_pathMyTxtFile, true))
-                {
-                    writer.WriteLine(builder.ToString());
-                }
-            }
-            catch (Exception error)
+            Status = SecurityLoadStatus.Loading;
+
+            for (int i = 0; i < DataPies.Count; i++)
             {
                 if (_isDeleted) { return; }
 
-                if (NewLogMessageEvent != null)
+                if (DataPies[i].Status == DataPieStatus.Load &&
+                   i + 1 != DataPies.Count)
                 {
-                    NewLogMessageEvent(error.ToString(), LogMessageType.Error);
+                    continue;
                 }
+
+                if (DataPies[i].Status == DataPieStatus.Load &&
+                    i + 1 == DataPies.Count &&
+                   param.NeedToUpdate == false)
+                {
+                    continue;
+                }
+
+                if (DataPies[i].CountTriesToLoadSet >= 2 &&
+                    i + 1 != DataPies.Count)
+                {
+                    continue;
+                }
+
+                if (DataPies[i].CountTriesToLoadSet >= 2 &&
+                   i + 1 == DataPies.Count &&
+                   param.NeedToUpdate == false)
+                {
+                    continue;
+                }
+
+                if (param.Regime == DataSetState.Off)
+                {
+                    return;
+                }
+
+                DataPies[i].CountTriesToLoadSet = DataPies[i].CountTriesToLoadSet + 1;
+
+                LoadMarketDepthHistoryFromServer(DataPies[i], server);
+
+                if (_isDeleted) { return; }
+
+                if (DataPies[i].Status == DataPieStatus.Load)
+                {
+                    CheckTimeInSets();
+                }
+            }
+
+            Status = SecurityLoadStatus.Load;
+        }
+
+        private void LoadMarketDepthHistoryFromServer(DataPie pie, IServer server)
+        {
+            if (_isDeleted)
+            {
+                return;
+            }
+
+            SendNewLogMessage("Try load sec: " + SecName + " , tf: " + TimeFrame +
+               " , start: " + pie.Start.ToShortDateString() + " , end: " + pie.End.ToShortDateString(), LogMessageType.System);
+
+
+            List<string> marketDepthFiles = server.GetQshHistoryFileToSecurity(SecName, SecClass, pie.Start, pie.End, pie.Start, false);
+
+            if (marketDepthFiles == null ||
+                marketDepthFiles.Count == 0)
+            {
+                SendNewLogMessage("Error. No candles. sec: " + SecName + " , tf: " + TimeFrame +
+                   " , start: " + pie.Start.ToShortDateString() + " , end: " + pie.End.ToString(), LogMessageType.System);
+
+                return;
+            }
+
+            (DateTime earlyFileDate, DateTime lateFileDate) = CheckMDTimeInSet(marketDepthFiles);
+
+            pie.SaveMarketDepthInfoPieInTempFile(earlyFileDate, lateFileDate, marketDepthFiles.Count);
+
+            pie.UpDateStatus();
+
+            SendNewLogMessage("Depths Load Successfully. sec: " + SecName + " , tf: " + TimeFrame +
+             " , start: " + pie.Start.ToShortDateString() + " , end: " + pie.End.ToString(), LogMessageType.System);
+
+
+            for (int i = 0; i < marketDepthFiles.Count; i++)
+            {
+                MoveFile(marketDepthFiles[i], _pathMyTfFolder);
+            }
+
+            pie.Status = DataPieStatus.Load;
+        }
+
+        private void MoveFile(string sourceFilePath, string destinationFolder)
+        {
+            try
+            {
+                string fileName = Path.GetFileName(sourceFilePath);
+                string destinationPath = Path.Combine(destinationFolder, fileName);
+
+                File.Move(sourceFilePath, destinationPath, true);
+
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        private (DateTime earlyFileDate, DateTime lateFileDate) CheckMDTimeInSet(IEnumerable<string> qshFilesPaths)
+        {
+            DateTime earlyFileDate = DateTime.MaxValue;
+            DateTime lateFileDate = DateTime.MinValue;
+
+            try
+            {
+                IEnumerator<string> filesEnumerator = qshFilesPaths.GetEnumerator();
+
+                while (filesEnumerator.MoveNext())
+                {
+                    string fileName = Path.GetFileName(filesEnumerator.Current);
+                    string datePart = fileName.Split('.')[^3];
+
+                    DateTime fileDate = DateTime.ParseExact(datePart, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+                    if (fileDate < earlyFileDate)
+                        earlyFileDate = fileDate;
+
+                    if (fileDate > lateFileDate)
+                        lateFileDate = fileDate;
+                }
+
+                return (earlyFileDate, lateFileDate);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage($"{ex.Message} {ex.StackTrace}", LogMessageType.Error);
+                return (earlyFileDate, lateFileDate);
             }
         }
 
@@ -1931,7 +2331,10 @@ namespace OsEngine.OsData
 
             series.IsStarted = true;
 
-            series.SetNewTicks(trades);
+            for (int i = 0; i < trades.Count; i++)
+            {
+                series.SetNewTicks(trades[i]);
+            }
 
             return series.CandlesAll;
         }
@@ -2011,13 +2414,18 @@ namespace OsEngine.OsData
 
     public class MarketDepthLoader
     {
-        public MarketDepthLoader(string secName, string secClass, ServerType serverType, string serverName, int depth)
+        #region Constructor
+
+        public MarketDepthLoader(string secName, string secClass, ServerType serverType, string serverName, int depth, decimal priceStep, decimal volumeStep, string pathSecurityFolder)
         {
             _secName = secName;
             _secClass = secClass;
             _serverType = serverType;
             _serverName = serverName;
             _depth = depth;
+            _priceStep = priceStep;
+            _volumeStep = volumeStep;
+            _pathSecurityFolder = pathSecurityFolder;
 
             CreateSource();
         }
@@ -2025,6 +2433,8 @@ namespace OsEngine.OsData
         public void Delete()
         {
             _isDeleted = true;
+
+            OffStream();
 
             if (MarketDepthSource != null)
             {
@@ -2034,9 +2444,686 @@ namespace OsEngine.OsData
                 MarketDepthSource.LogMessageEvent -= SendNewLogMessage;
                 MarketDepthSource = null;
             }
+
+            MarketDepthQueue.Clear();
+            MarketDepthQueue = null;
+            _lastMarketDepth = null;
         }
 
+        private void CreateSource()
+        {
+            string nameTab = "osDataMdSource_"
+                + _serverType + "_"
+                + _secName + "_"
+                + _secClass + "_"
+                + _depth;
+
+            MarketDepthSource = new BotTabSimple(nameTab, StartProgram.IsOsData);
+            MarketDepthSource.Connector.SecurityName = _secName;
+            MarketDepthSource.Connector.SecurityClass = _secClass;
+            MarketDepthSource.Connector.ServerType = _serverType;
+            MarketDepthSource.Connector.ServerFullName = _serverName;
+            MarketDepthSource.TimeFrameBuilder.TimeFrame = TimeFrame.MarketDepth;
+
+            MarketDepthSource.MarketDepthUpdateEvent += MarketDepthSource_MarketDepthUpdateEvent;
+            MarketDepthSource.LogMessageEvent += SendNewLogMessage;
+
+            Task.Run(() => UpdateMarketDataAsync());
+
+            //Thread worker = new Thread(UpdateMarketDataAsync);
+            //worker.Start();
+        }
+
+        private void CreateHeader(BinaryWriter writer, MarketDepth md)
+        {
+            try
+            {
+                byte[] signature = Encoding.UTF8.GetBytes("QScalp History Data");
+                writer.Write(signature);
+                writer.Write((byte)4);
+                WriteString(writer, "OsEngine");
+                WriteString(writer, $"VolumeStep:{_volumeStep}");
+
+                long startTicks = DateTime.UtcNow.Ticks;
+
+                _lastTimeStamp = TimeManager.GetTimeStampMillisecondsFromStartTime(md.Time);
+
+                writer.Write(startTicks);
+
+                byte streamCount = (byte)1;
+                writer.Write(streamCount);
+
+                string instrumentCode = $"{_serverType.ToString()}:{_secName}:{_secClass}:1:{_priceStep}";
+
+                writer.Write(GetStreamId(StreamType.Quotes));
+                WriteString(writer, instrumentCode);
+
+                writer.Flush();
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private byte GetStreamId(StreamType streamType)
+        {
+            return streamType switch
+            {
+                StreamType.Quotes => 0x10,
+                StreamType.Deals => 0x20,
+                StreamType.OwnOrders => 0x30,
+                StreamType.OwnTrades => 0x40,
+                StreamType.Messages => 0x50,
+                StreamType.AuxInfo => 0x60,
+                StreamType.OrdLog => 0x70,
+                _ => throw new ArgumentException("Unknown stream type")
+            };
+        }
+
+        private void WriteString(BinaryWriter writer, string value)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    ULeb128.WriteULeb128(writer, 0);
+                    return;
+                }
+
+                byte[] bytes = Encoding.UTF8.GetBytes(value);
+                ULeb128.WriteULeb128(writer, (ulong)bytes.Length);
+                writer.Write(bytes);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void WriteFrameHeader(DataBinaryWriter writer, DateTime time, ref long lastTimeStamp, StreamType streamType)
+        {
+            try
+            {
+                long timeStamp = TimeManager.GetTimeStampMillisecondsFromStartTime(time);
+
+                long diff = timeStamp - lastTimeStamp;
+                lastTimeStamp = timeStamp;
+                _lastFrameDateTime = time;
+
+                writer.WriteGrowing(diff);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        #endregion
+
+        #region Thread converter
+
+        private void CreateStream(MarketDepth md)
+        {
+            _fileStream = new FileStream(_filePath, FileMode.Create, FileAccess.Write);
+            _binaryWriter = new DataBinaryWriter(_fileStream);
+
+            CreateHeader(_binaryWriter, md);
+        }
+
+        private async void UpdateMarketDataAsync()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (MainWindow.ProccesIsWorked == false) return;
+
+                    if (_isDeleted) return;
+
+                    if (MarketDepthQueue.IsEmpty)
+                    {
+                        if (_binaryWriter != null) _binaryWriter.Flush();
+
+                        OffStream();
+
+                        await Task.Delay(500);
+                        //Thread.Sleep(500);
+                        continue;
+                    }
+
+                    if (MarketDepthQueue.IsEmpty == false)
+                    {
+                        MarketDepth md = null;
+
+                        if (MarketDepthQueue.TryDequeue(out md))
+                        {
+                            if (md != null)
+                            {
+                                MarketDepth marketDepth = md;
+
+                                if (marketDepth == null) continue;
+
+                                if (_lastFrameDateTime.Date != marketDepth.Time.Date)
+                                {
+                                    _filePath = _pathSecurityFolder + "\\" + SecName.RemoveExcessFromSecurityName() + "." + DateTime.UtcNow.ToString("yyyy-MM-dd") + ".Quotes" + ".qsh";
+
+                                    bool fileExist = File.Exists(_filePath);
+
+                                    if (fileExist == false)
+                                    {
+                                        _lastMarketDepth = null;
+                                        _lastMarketDepthPrice = 0;
+                                        _lastTimeStamp = 0;
+
+                                        OffStream();
+                                        CreateStream(marketDepth);
+                                    }
+                                    else if (_lastMarketDepth == null
+                                        && fileExist == true)
+                                    {
+                                        OffStream();
+                                        ReadBinaryFile();
+                                    }
+                                }
+
+                                if (_fileStream == null)
+                                {
+                                    _fileStream = new FileStream(_filePath, FileMode.Append, FileAccess.Write);
+                                }
+
+                                if (_binaryWriter == null)
+                                {
+                                    _binaryWriter = new DataBinaryWriter(_fileStream);
+                                }
+
+                                if (_lastMarketDepth == null)
+                                {
+                                    WriteFrameHeader(_binaryWriter, marketDepth.Time, ref _lastTimeStamp, StreamType.Quotes);
+                                    WriteFirstMarketDepthData(_binaryWriter, marketDepth);
+
+                                    _lastMarketDepth = marketDepth;
+                                }
+                                else
+                                {
+                                    WriteSecondMarketDepthData(_binaryWriter, marketDepth);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+
+                    _lastMarketDepth = null;
+                    _lastMarketDepthPrice = 0;
+                    _lastTimeStamp = 0;
+
+                    OffStream();
+                }
+            }
+        }
+
+        private void OffStream()
+        {
+            if (_binaryWriter != null)
+            {
+                _binaryWriter.Dispose();
+                _binaryWriter = null;
+            }
+
+            if (_fileStream != null)
+            {
+                _fileStream.Dispose();
+                _fileStream = null;
+            }
+        }
+
+        #endregion
+
+        #region MarketDepth
+
+        private void WriteSecondMarketDepthData(DataBinaryWriter writer, MarketDepth md)
+        {
+            try
+            {
+                List<QuoteChange> changes = new List<QuoteChange>();
+
+                if (md.Asks.Count == 0 || md.Bids.Count == 0 ||
+                    (md.Asks.Count > 0 && md.Bids.Count > 0 &&
+                    md.Asks[0].Price < md.Bids[0].Price))
+                {
+                    return;
+                }
+
+                if (ProcessAsksChanges(_lastMarketDepth.Asks, md.Asks, ref changes) == false) return;
+                if (ProcessBidsChanges(_lastMarketDepth.Bids, md.Bids, ref changes) == false) return;
+
+                if (changes.Count > 0)
+                {
+                    WriteFrameHeader(writer, md.Time, ref _lastTimeStamp, StreamType.Quotes);
+                    WriteChangesToFile(writer, changes);
+                    _lastMarketDepth = md;
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        private void WriteChangesToFile(DataBinaryWriter writer, List<QuoteChange> changes)
+        {
+            writer.WriteLeb128(changes.Count);
+
+            for (int i = changes.Count - 1; i >= 0; i--)
+            {
+                QuoteChange change = changes[i];
+
+                writer.WriteLeb128(change.Price - _lastMarketDepthPrice);
+                _lastMarketDepthPrice = change.Price;
+
+                writer.WriteLeb128(change.Volume);
+            }
+        }
+
+        private bool ProcessAsksChanges(List<MarketDepthLevel> oldAsks, List<MarketDepthLevel> newAsks, ref List<QuoteChange> changes)
+        {
+            Dictionary<double, double> oldAsksDict = new Dictionary<double, double>();
+            int oldCount = oldAsks.Count;
+            for (int i = 0; i < oldAsks.Count && i < _depth; i++)
+            {
+                MarketDepthLevel ask = oldAsks[i];
+                oldAsksDict[ask.Price] = ask.Ask;
+            }
+
+            int diffOldAsk = 0;
+            if (oldAsks.Count > _depth)
+                diffOldAsk = oldAsks.Count - _depth;
+
+            if (oldAsksDict.Count != oldAsks.Count - diffOldAsk) return false;
+
+            Dictionary<double, double> newAsksDict = new Dictionary<double, double>();
+            int newCount = newAsks.Count;
+            for (int i = 0; i < newAsks.Count && i < _depth; i++)
+            {
+                MarketDepthLevel ask = newAsks[i];
+                newAsksDict[ask.Price] = ask.Ask;
+            }
+
+            int diffNewAsk = 0;
+            if (newAsks.Count > _depth)
+                diffNewAsk = newAsks.Count - _depth;
+
+            if (newAsksDict.Count != newAsks.Count - diffNewAsk) return false;
+
+            List<MarketDepthLevel> changesDepth = new List<MarketDepthLevel>();
+
+            for (int i = 0; i < oldAsks.Count && i < _depth; i++)
+            {
+                MarketDepthLevel oldAsk = oldAsks[i];
+
+                if (!newAsksDict.ContainsKey(oldAsk.Price))
+                {
+                    changesDepth.Add(oldAsk);
+
+                    changes.Add(new QuoteChange
+                    {
+                        Price = (long)Math.Round((decimal)oldAsk.Price / _priceStep, MidpointRounding.AwayFromZero),
+                        Volume = 0
+                    });
+                }
+            }
+
+            for (int i = 0; i < newAsks.Count && i < _depth; i++)
+            {
+                MarketDepthLevel newAsk = newAsks[i];
+                if (oldAsksDict.TryGetValue(newAsk.Price, out double oldVolume))
+                {
+                    if (newAsk.Ask != oldVolume)
+                    {
+                        changesDepth.Add(newAsk);
+
+                        changes.Add(new QuoteChange
+                        {
+                            Price = (long)Math.Round((decimal)newAsk.Price / _priceStep, MidpointRounding.AwayFromZero),
+                            Volume = (long)((decimal)newAsk.Ask / _volumeStep)
+                        });
+                    }
+                }
+                else
+                {
+                    changesDepth.Add(newAsk);
+
+                    changes.Add(new QuoteChange
+                    {
+                        Price = (long)Math.Round((decimal)newAsk.Price / _priceStep, MidpointRounding.AwayFromZero),
+                        Volume = (long)((decimal)newAsk.Ask / _volumeStep)
+                    });
+                }
+            }
+
+            return true;
+        }
+
+        private bool ProcessBidsChanges(List<MarketDepthLevel> oldBids, List<MarketDepthLevel> newBids, ref List<QuoteChange> changes)
+        {
+            Dictionary<double, double> oldBidsDict = new Dictionary<double, double>();
+            for (int i = 0; i < oldBids.Count && i < _depth; i++)
+            {
+                MarketDepthLevel bid = oldBids[i];
+                if (bid == null) continue;
+
+                oldBidsDict[bid.Price] = bid.Bid;
+            }
+
+            int diffOldBid = 0;
+            if (oldBids.Count > _depth)
+                diffOldBid = oldBids.Count - _depth;
+
+            if (oldBidsDict.Count != oldBids.Count - diffOldBid) return false;
+
+            Dictionary<double, double> newBidsDict = new Dictionary<double, double>();
+            for (int i = 0; i < newBids.Count && i < _depth; i++)
+            {
+                MarketDepthLevel bid = newBids[i];
+                if (bid == null) continue;
+
+                newBidsDict[bid.Price] = bid.Bid;
+            }
+
+            int diffNewBid = 0;
+            if (newBids.Count > _depth)
+                diffNewBid = newBids.Count - _depth;
+
+            if (newBidsDict.Count != newBids.Count - diffNewBid) return false;
+
+            for (int i = 0; i < oldBids.Count && i < _depth; i++)
+            {
+                MarketDepthLevel oldBid = oldBids[i];
+                if (oldBid == null) continue;
+
+                if (!newBidsDict.ContainsKey(oldBid.Price))
+                {
+                    changes.Insert(0, new QuoteChange
+                    {
+                        Price = (long)((decimal)oldBid.Price / _priceStep),
+                        Volume = 0
+                    });
+                }
+            }
+
+            for (int i = 0; i < newBids.Count && i < _depth; i++)
+            {
+                MarketDepthLevel newBid = newBids[i];
+                if (newBid == null) continue;
+
+                if (oldBidsDict.TryGetValue(newBid.Price, out double oldVolume))
+                {
+                    if (newBid.Bid != oldVolume)
+                    {
+                        changes.Insert(0, new QuoteChange
+                        {
+                            Price = (long)((decimal)newBid.Price / _priceStep),
+                            Volume = -(long)((decimal)newBid.Bid / _volumeStep)
+                        });
+                    }
+                }
+                else
+                {
+                    changes.Insert(0, new QuoteChange
+                    {
+                        Price = (long)((decimal)newBid.Price / _priceStep),
+                        Volume = -(long)((decimal)newBid.Bid / _volumeStep)
+                    });
+                }
+            }
+
+            return true;
+        }
+
+        private void WriteFirstMarketDepthData(DataBinaryWriter writer, MarketDepth md)
+        {
+            try
+            {
+                List<QuoteChange> changes = new List<QuoteChange>();
+
+                for (int i = 0; i < md.Asks.Count && i < _depth; i++)
+                {
+                    QuoteChange quoteChange = new QuoteChange();
+
+                    quoteChange.Price = (long)((decimal)md.Asks[i].Price / _priceStep);
+                    quoteChange.Volume = (long)((decimal)md.Asks[i].Ask / _volumeStep);
+
+                    changes.Add(quoteChange);
+                }
+
+                for (int i = 0; i < md.Bids.Count && i < _depth; i++)
+                {
+                    QuoteChange quoteChange = new QuoteChange();
+
+                    quoteChange.Price = (long)((decimal)md.Bids[i].Price / _priceStep);
+                    quoteChange.Volume = -(long)((decimal)md.Bids[i].Bid / _volumeStep);
+
+                    changes.Insert(0, quoteChange);
+                }
+
+                WriteChangesToFile(writer, changes);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.ToString(), LogMessageType.Error);
+            }
+        }
+
+        #endregion
+
+        #region Read files
+
+        private bool ReadBinaryFile()
+        {
+            using (FileStream fs = File.OpenRead(_filePath))
+            {
+                try
+                {
+                    Stream stream = GetDataStream(fs, _prefix);
+
+                    if (stream == null)
+                    {
+                        return false;
+                    }
+
+                    DataBinaryReader dataReader = new DataBinaryReader(stream);
+
+                    int version = stream.ReadByte();
+
+                    switch (version)
+                    {
+                        case 4:
+
+                            string appName = dataReader.ReadString();
+                            string comment = dataReader.ReadString();
+
+                            if (comment != "")
+                            {
+                                string[] volumeSplit = comment.Split(':');
+
+                                double volumeStep = 1;
+
+                                if (volumeSplit.Length == 2)
+                                {
+                                    if (volumeSplit[0] == "VolumeStep" && double.TryParse(volumeSplit[1].Replace(',', '.'), NumberStyles.Float, NumberFormatInfo.InvariantInfo, out volumeStep))
+                                    {
+                                        _volumeStep = (decimal)volumeStep;
+                                    }
+                                }
+                            }
+
+                            if (_volumeStep == 0)
+                                _volumeStep = 1;
+
+                            DateTime time = new DateTime(dataReader.ReadInt64(), DateTimeKind.Utc);
+                            _lastTimeStamp = TimeManager.GetTimeStampMillisecondsFromStartTime(time);
+
+                            int streamCount = dataReader.ReadByte();
+
+                            if (streamCount != 1) return false;
+
+                            StreamType streamType = (StreamType)dataReader.ReadByte();
+                            if (streamType != StreamType.Quotes) return false;
+                            string securityName = dataReader.ReadString();
+
+                            string[] step = securityName.Split(':');
+
+                            double priceStep = 1;
+                            if (step.Length == 5)
+                            {
+                                if (double.TryParse(step[4].Replace(',', '.'), NumberStyles.Float, NumberFormatInfo.InvariantInfo, out priceStep))
+                                {
+                                    _priceStep = (decimal)priceStep;
+                                }
+                                else return false;
+                            }
+                            else return false;
+
+                            break;
+
+                        default:
+                            ServerMaster.SendNewLogMessage("Unsupported file version (" + version + ")", LogMessageType.Error);
+                            return false;
+                    }
+
+                    MarketDepth marketDepth = new MarketDepth();
+
+                    try
+                    {
+                        while (true)
+                        {
+                            _lastTimeStamp = dataReader.ReadGrowing(_lastTimeStamp);
+                            DateTime time = TimeManager.GetDateTimeFromStartTimeMilliseconds(_lastTimeStamp);
+
+                            marketDepth.SetMarketDepthFromBinaryFile(dataReader, _priceStep, _volumeStep, _lastTimeStamp);
+                            marketDepth.Time = time;
+                            _lastMarketDepth = marketDepth;
+                            _lastMarketDepthPrice = marketDepth.LastBinaryPrice;
+                        }
+                    }
+                    catch (EndOfStreamException)
+                    {
+                        //ignore
+                    }
+
+                    dataReader.Dispose();
+                    dataReader.Close();
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool CheckPrefix(Stream stream, byte[] buffer, byte[] prefix)
+        {
+            int length = stream.Read(buffer, 0, buffer.Length);
+            if (length != prefix.Length)
+                return false;
+
+            for (int i = 0; i < buffer.Length; i++)
+                if (buffer[i] != prefix[i])
+                    return false;
+
+            return true;
+        }
+
+        private Stream GetDataStream(FileStream fs, byte[] prefix)
+        {
+            byte[] buffer = new byte[prefix.Length];
+
+            if (CheckPrefix(fs, buffer, prefix))
+                return fs;
+
+            Stream stream = null;
+
+            try
+            {
+                fs.Position = 0;
+                stream = new GZipStream(fs, CompressionMode.Decompress, true);
+
+                if (CheckPrefix(stream, buffer, prefix))
+                    return stream;
+            }
+            catch { }
+
+            if (stream != null)
+            {
+                stream.Dispose();
+                stream = null;
+            }
+
+            try
+            {
+                fs.Position = 0;
+                stream = new DeflateStream(fs, CompressionMode.Decompress, true);
+
+                if (CheckPrefix(stream, buffer, prefix))
+                    return stream;
+            }
+            catch { }
+
+            if (stream != null)
+            {
+                stream.Dispose();
+                stream = null;
+            }
+
+            return null;
+        }
+
+        #endregion
+
+        #region Fields
+
         private bool _isDeleted;
+
+        private ServerType _serverType;
+
+        private string _serverName;
+
+        private readonly string _pathSecurityFolder;
+
+        private string _filePath;
+
+        public BotTabSimple MarketDepthSource;
+
+        private ConcurrentQueue<MarketDepth> MarketDepthQueue = new ConcurrentQueue<MarketDepth>();
+
+        public event Action<string, LogMessageType> NewLogMessageEvent;
+
+        private MarketDepth _lastMarketDepth;
+
+        private FileStream _fileStream;
+
+        private DataBinaryWriter _binaryWriter;
+
+        private decimal _priceStep;
+
+        private decimal _volumeStep;
+
+        private long _lastMarketDepthPrice;
+
+        private long _lastTimeStamp;
+
+        private DateTime _lastFrameDateTime;
+
+        private readonly byte[] _prefix = Encoding.UTF8.GetBytes("QScalp History Data");
+
+        #endregion
+
+        #region Properties
 
         public string SecName
         {
@@ -2050,50 +3137,32 @@ namespace OsEngine.OsData
         }
         private string _secClass;
 
-        private ServerType _serverType;
-
-        private string _serverName;
-
         public int Depth
         {
             get { return _depth; }
         }
         private int _depth;
 
-        private void CreateSource()
-        {
-            string nameTab = "osDataMdSource_"
-                + _serverType + "_"
-                + _secName + "_"
-                + _secClass + "_"
-                + _depth;
+        public bool IsLoad;
 
+        #endregion
 
-
-            MarketDepthSource = new BotTabSimple(nameTab, StartProgram.IsOsData);
-            MarketDepthSource.Connector.SecurityName = _secName;
-            MarketDepthSource.Connector.SecurityClass = _secClass;
-            MarketDepthSource.Connector.ServerType = _serverType;
-            MarketDepthSource.Connector.ServerFullName = _serverName;
-            MarketDepthSource.TimeFrameBuilder.TimeFrame = TimeFrame.Hour1;
-            MarketDepthSource.MarketDepthUpdateEvent += MarketDepthSource_MarketDepthUpdateEvent;
-            MarketDepthSource.LogMessageEvent += SendNewLogMessage;
-        }
+        #region Events 
 
         private void MarketDepthSource_MarketDepthUpdateEvent(MarketDepth md)
         {
-            if (_isDeleted == true)
-            {
-                return;
-            }
+            if (_isDeleted == true) return;
 
-            string saveStr = md.GetSaveStringToAllDepfh(_depth);
-            SaveStrings.Enqueue(saveStr);
+            if (IsLoad == false) return;
+
+            md.Time = DateTime.UtcNow;
+
+            MarketDepthQueue.Enqueue(md);
         }
 
-        public BotTabSimple MarketDepthSource;
+        #endregion
 
-        public ConcurrentQueue<string> SaveStrings = new ConcurrentQueue<string>();
+        #region Log
 
         private void SendNewLogMessage(string message, LogMessageType type)
         {
@@ -2109,8 +3178,9 @@ namespace OsEngine.OsData
             }
         }
 
-        public event Action<string, LogMessageType> NewLogMessageEvent;
+        #endregion
     }
+
 
     public class SettingsToLoadSecurity
     {
@@ -2132,7 +3202,7 @@ namespace OsEngine.OsData
             TimeStart = DateTime.Now.AddDays(-5);
             TimeEnd = DateTime.Now.AddDays(5);
             MarketDepthDepth = 5;
-
+            TfMarketDepthHistIsOn = false;
         }
 
         public void Load(string saveStr)
@@ -2192,6 +3262,15 @@ namespace OsEngine.OsData
             {
                 // ignore
             }
+
+            if (saveArray.Length > 26 && saveArray[26] != "")
+            {
+                TfMarketDepthHistIsOn = Convert.ToBoolean(saveArray[26]);
+            }
+            else
+            {
+                TfMarketDepthHistIsOn = false;
+            }
         }
 
         public string GetSaveStr()
@@ -2227,6 +3306,7 @@ namespace OsEngine.OsData
             result += NeedToUpdate + "%";
             result += TfDayIsOn + "%";
             result += SourceName + "%";
+            result += TfMarketDepthHistIsOn + "%";
 
             return result;
         }
@@ -2257,6 +3337,7 @@ namespace OsEngine.OsData
         public bool TfDayIsOn;
         public bool TfTickIsOn;
         public bool TfMarketDepthIsOn;
+        public bool TfMarketDepthHistIsOn;
         public int MarketDepthDepth;
         public bool NeedToUpdate;
     }
@@ -2278,7 +3359,7 @@ namespace OsEngine.OsData
             }
             set
             {
-                if( _countTriesToLoadSet == value )
+                if (_countTriesToLoadSet == value)
                 {
                     return;
                 }
@@ -2322,7 +3403,9 @@ namespace OsEngine.OsData
 
             if (_pathMyTempPieInTfFolder.Contains("Tick") == false
                 &&
-                _pathMyTempPieInTfFolder.Contains("Sec") == false)
+                _pathMyTempPieInTfFolder.Contains("Sec") == false
+                &&
+                _pathMyTempPieInTfFolder.Contains("MarketDepth") == false)
             {
                 CandlesInfo = LoadCandlesPieStatus();
             }
@@ -2331,11 +3414,24 @@ namespace OsEngine.OsData
 
             if ((CandlesInfo == null
                 || CandlesInfo.FirstCandle == null)
-                && 
+                &&
                 (_pathMyTempPieInTfFolder.Contains("Tick") == true
                 || _pathMyTempPieInTfFolder.Contains("Sec") == true))
             {
                 TradesInfo = LoadTradesPieStatus();
+            }
+
+            MarkeDepthPieStatusInfo markeDepthPieStatusInfo = null;
+
+            if ((CandlesInfo == null
+               || CandlesInfo.FirstCandle == null)
+               &&
+               (TradesInfo == null
+               || TradesInfo.FirstTrade == null)
+               &&
+                _pathMyTempPieInTfFolder != "MarketDepth")
+            {
+                markeDepthPieStatusInfo = LoadMDPieStatus();
             }
 
             DateTime start = DateTime.MinValue;
@@ -2348,6 +3444,11 @@ namespace OsEngine.OsData
             if (TradesInfo != null && TradesInfo.FirstTrade != null)
             {
                 start = TradesInfo.FirstTrade.Time;
+            }
+
+            if (markeDepthPieStatusInfo != null && markeDepthPieStatusInfo.FirstFileDate != DateTime.MinValue)
+            {
+                start = markeDepthPieStatusInfo.FirstFileDate;
             }
 
             StartFact = start;
@@ -2366,10 +3467,15 @@ namespace OsEngine.OsData
                 end = TradesInfo.LastTrade.Time;
             }
 
+            if (markeDepthPieStatusInfo != null && markeDepthPieStatusInfo.LastFileDate != DateTime.MinValue)
+            {
+                end = markeDepthPieStatusInfo.LastFileDate;
+            }
+
             EndFact = end;
 
             if (CandlesInfo == null &&
-                TradesInfo == null)
+                TradesInfo == null && markeDepthPieStatusInfo == null)
             {
                 ObjectCount = 0;
             }
@@ -2382,6 +3488,11 @@ namespace OsEngine.OsData
             if (TradesInfo != null)
             {
                 ObjectCount = TradesInfo.TradesCount;
+            }
+
+            if (markeDepthPieStatusInfo != null)
+            {
+                ObjectCount = markeDepthPieStatusInfo.QshFilesCount;
             }
         }
 
@@ -2416,7 +3527,7 @@ namespace OsEngine.OsData
 
         public void LoadPieSettings()
         {
-            string pathToTempFile = _pathMyTempPieInTfFolder  + "\\" + "Settings_" + TempFileName;
+            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + "Settings_" + TempFileName;
 
             if (File.Exists(pathToTempFile) == false)
             {
@@ -2438,7 +3549,7 @@ namespace OsEngine.OsData
 
         private void SavePieSettings()
         {
-            string pathToTempFile = _pathMyTempPieInTfFolder  + "\\" + "Settings_" + TempFileName;
+            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + "Settings_" + TempFileName;
 
             try
             {
@@ -2644,8 +3755,7 @@ namespace OsEngine.OsData
 
         public List<Trade> LoadTradeDataPieFromTempFile()
         {
-
-            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + Start.ToString("yyyyMMdd") + "_" + End.ToString("yyyyMMdd") + ".txt";
+            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + TempFileName;
 
             if (File.Exists(pathToTempFile) == false)
             {
@@ -2720,6 +3830,67 @@ namespace OsEngine.OsData
         }
 
         #endregion
+
+        #region QshMarketDepth
+
+        public MarkeDepthPieStatusInfo LoadMDPieStatus()
+        {
+            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + TempFileName;
+
+            if (File.Exists(pathToTempFile) == false)
+            {
+                return null;
+            }
+
+            MarkeDepthPieStatusInfo info = new MarkeDepthPieStatusInfo();
+
+            try
+            {
+                string piePeriod = File.ReadAllText(pathToTempFile);
+
+                if (!string.IsNullOrEmpty(piePeriod))
+                {
+                    string[] datesStr = piePeriod.Split('#');
+
+                    info.FirstFileDate = DateTime.ParseExact(datesStr[0], "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    info.LastFileDate = DateTime.ParseExact(datesStr[1], "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+                    info.QshFilesCount = int.Parse(datesStr[2]);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (info.FirstFileDate != DateTime.MinValue)
+            {
+                Status = DataPieStatus.Load;
+            }
+
+            return info;
+        }
+
+        public void SaveMarketDepthInfoPieInTempFile(DateTime realStart, DateTime realEnd, int qshFilesCount)
+        {
+            string pathToTempFile = _pathMyTempPieInTfFolder + "\\" + TempFileName;
+
+            try
+            {
+                string start = realStart.ToString("yyyy-MM-dd");
+                string end = realEnd.ToString("yyyy-MM-dd");
+
+                string pieInfo = string.Join('#', [start, end, qshFilesCount]);
+
+                File.WriteAllText(pathToTempFile, pieInfo);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        #endregion
     }
 
     public enum SecurityLoadStatus
@@ -2736,6 +3907,12 @@ namespace OsEngine.OsData
         None,
         Load,
         InProcess
+    }
+
+    public class QuoteChange
+    {
+        public long Price;
+        public long Volume;
     }
 
     public class TradePieStatusInfo
@@ -2755,5 +3932,240 @@ namespace OsEngine.OsData
         public Candle LastCandle;
 
         public int CandlesCount;
+    }
+
+    public class MarkeDepthPieStatusInfo
+    {
+        public DateTime FirstFileDate;
+
+        public DateTime LastFileDate;
+
+        public int QshFilesCount;
+    }
+
+    public class SetDublicator
+    {
+        public string Regime { get; set; }
+
+        public string PathForDublicate { get; set; }
+
+        public TimeSpan UpdatePeriod { get; set; }
+
+        public DateTime TimeWriteOriginalSet { get; set; }
+
+        public DateTime TimeLastCheckSet { get; set; } = DateTime.MinValue;
+
+        public void SaveDublicateSettings(string pathSettings)
+        {
+            string result = "";
+
+            result += Regime + "%";
+            result += PathForDublicate + "%";
+            result += UpdatePeriod.Minutes + "%";
+            result += TimeWriteOriginalSet.ToString(CultureInfo.InvariantCulture);
+
+            try
+            {
+                File.WriteAllText(pathSettings, result);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        public void LoadDublicateSettings(string pathSettings)
+        {
+            try
+            {
+                string settings = File.ReadAllText(pathSettings);
+
+                if (!string.IsNullOrEmpty(settings))
+                {
+                    string[] setParts = settings.Split('%');
+
+                    Regime = setParts[0];
+                    PathForDublicate = setParts[1];
+                    UpdatePeriod = new TimeSpan(0, Convert.ToInt32(setParts[2]), 0);
+                    TimeWriteOriginalSet = Convert.ToDateTime(setParts[3], CultureInfo.InvariantCulture);
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        public void UpdateDublicate(string setName)
+        {
+            try
+            {
+                string sourcePath = "Data\\" + setName;
+                string destinationPath = PathForDublicate + "\\" + setName;
+
+                if (Directory.Exists(destinationPath))
+                {
+                    Directory.Delete(destinationPath, true);
+                }
+
+                Microsoft.VisualBasic.FileIO.FileSystem.CopyDirectory(sourcePath, destinationPath, true);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        public DateTime GetLatestFileTime(string setPath)
+        {
+            List<DateTime> filesTimes = [];
+
+            DateTime latestTime = DateTime.MinValue;
+
+            try
+            {
+                string[] secFolders = Directory.GetDirectories(setPath);
+
+                for (int i = 0; i < secFolders.Length; i++)
+                {
+                    string securityFolder = secFolders[i];
+
+                    string[] timeFrameFolders = Directory.GetDirectories(securityFolder);
+
+                    for (int j = 0; j < timeFrameFolders.Length; j++)
+                    {
+                        string timeFrameFolder = timeFrameFolders[j];
+
+                        string[] secFiles = Directory.GetFiles(timeFrameFolder, "*.txt");
+
+                        if (secFiles.Length > 0)
+                        {
+                            filesTimes.Add(File.GetLastWriteTime(secFiles[0]));
+                        }
+                    }
+                }
+
+                for (int i = 0; i < filesTimes.Count; i++)
+                {
+                    if (filesTimes[i] > latestTime)
+                        latestTime = filesTimes[i];
+                }
+
+                return latestTime;
+
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+                return latestTime;
+            }
+        }
+
+        public void SendNewLogMessage(string message, LogMessageType type)
+        {
+            if (NewLogMessageEvent != null)
+            {
+                NewLogMessageEvent(message, type);
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(message);
+            }
+        }
+
+        public event Action<string, LogMessageType> NewLogMessageEvent;
+    }
+
+    public class SetUpdater()
+    {
+        public string Regime { get; set; }
+
+        public string Period { get; set; }
+
+        public int HourUpdate { get; set; }
+
+        public TimeSpan UpdatePeriod { get; set; }
+
+        public DateTime TimeNextUpdate { get; set; }
+
+        public bool IsUpdateProcess { get; set; }
+
+        public void SaveUpdateSettings(string pathSettings)
+        {
+            string result = "";
+
+            result += Regime + "%";
+            result += Period + "%";
+            result += HourUpdate + "%";
+            result += TimeNextUpdate.ToString(CultureInfo.InvariantCulture);
+
+            try
+            {
+                File.WriteAllText(pathSettings, result);
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        public void LoadUpdateSettings(string pathSettings)
+        {
+            try
+            {
+                string settings = File.ReadAllText(pathSettings);
+
+                if (!string.IsNullOrEmpty(settings))
+                {
+                    string[] setParts = settings.Split('%');
+
+                    Regime = setParts[0];
+                    Period = setParts[1];
+                    HourUpdate = int.Parse(setParts[2]);
+
+                    DateTime timeNextUpdate = Convert.ToDateTime(setParts[3], CultureInfo.InvariantCulture);
+
+                    if (Period == "Day")
+                    {
+                        UpdatePeriod = new TimeSpan(1, 0, 0, 0, 0);
+
+                        TimeNextUpdate = timeNextUpdate < DateTime.Now ? DateTime.Now.Date.AddDays(1).AddHours(HourUpdate) : timeNextUpdate;
+                    }
+                    else
+                    {
+                        UpdatePeriod = new TimeSpan(1, 0, 0);
+
+                        TimeNextUpdate = DateTime.Now.Date.AddHours(DateTime.Now.Hour + 1);
+                    }
+
+                    IsUpdateProcess = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                SendNewLogMessage(ex.Message, LogMessageType.Error);
+            }
+        }
+
+        public void SendNewLogMessage(string message, LogMessageType type)
+        {
+            if (NewLogMessageEvent != null)
+            {
+                NewLogMessageEvent(message, type);
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(message);
+            }
+        }
+
+        public event Action<string, LogMessageType> NewLogMessageEvent;
+    }
+
+    public enum MarketDepthsLoaderType
+    {
+        None,
+        OnLine,
+        History
     }
 }

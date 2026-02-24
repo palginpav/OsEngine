@@ -105,7 +105,12 @@ namespace OsEngine.Market.Servers.Finam
         public ServerConnectStatus ServerStatus { get; set; }
 
         public event Action ConnectEvent;
+
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -226,7 +231,11 @@ namespace OsEngine.Market.Servers.Finam
 
             string[] unavailableSecurities = arraySets[9].Split(':');
 
+            string[] moexForeignSecurities = arraySets[10].Split(':');
+
             HashSet<string> unavailableSecHashSet = new HashSet<string>(unavailableSecurities);
+
+            HashSet<string> foreignSecHashSet = new HashSet<string>(moexForeignSecurities);
 
             _finamSecurities = new List<FinamSecurity>();
 
@@ -270,7 +279,6 @@ namespace OsEngine.Market.Servers.Finam
                     {
                         finamSecurity.Code = "DANDI.MINIFUT";
                     }
-
                 }
 
                 if (Convert.ToInt32(arrayMarkets[i]) == 200)
@@ -279,7 +287,14 @@ namespace OsEngine.Market.Servers.Finam
                 }
                 else if (Convert.ToInt32(arrayMarkets[i]) == 1)
                 {
-                    finamSecurity.Market = "МосБиржа акции";
+                    if(foreignSecHashSet.Contains(finamSecurity.Id))
+                    {
+                        finamSecurity.Market = "Мосбиржа иностранные акции";
+                    }
+                    else
+                    {
+                        finamSecurity.Market = "МосБиржа акции";
+                    }
                 }
                 else if (Convert.ToInt32(arrayMarkets[i]) == 14)
                 {
@@ -540,7 +555,7 @@ namespace OsEngine.Market.Servers.Finam
         public void GetPortfolios()
         {
             Portfolio newPortfolio = new Portfolio();
-            newPortfolio.Number = "Finam Virtual Portfolio";
+            newPortfolio.Number = "FinamVirtual";
             newPortfolio.ValueCurrent = 1;
             _myPortfolios.Add(newPortfolio);
 
@@ -676,6 +691,8 @@ namespace OsEngine.Market.Servers.Finam
         public event Action<OptionMarketDataForConnector> AdditionalMarketDataEvent { add { } remove { } }
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

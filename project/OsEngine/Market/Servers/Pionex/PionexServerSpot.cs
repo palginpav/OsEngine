@@ -31,6 +31,9 @@ namespace OsEngine.Market.Servers.Pionex
 
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
         }
     }
 
@@ -140,6 +143,10 @@ namespace OsEngine.Market.Servers.Pionex
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -989,8 +996,8 @@ namespace OsEngine.Market.Servers.Pionex
         {
             try
             {
-                if (_webSocketPublic.Count != 0
-                    && _webSocketPublic != null)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
                     for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
@@ -2080,6 +2087,8 @@ namespace OsEngine.Market.Servers.Pionex
                 return null;
             }
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

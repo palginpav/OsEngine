@@ -75,7 +75,12 @@ namespace OsEngine.Market.Servers.BybitData
         public ServerConnectStatus ServerStatus { get; set; }
 
         public event Action ConnectEvent;
+
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -437,10 +442,12 @@ namespace OsEngine.Market.Servers.BybitData
                         string csvFilePath = GetSCVFileFromArchive(gzipArchivePath);
 
                         trades.AddRange(ParseCsvFileToTrades(csvFilePath, security));
+
+                        SendLogMessage($"Load data. File: " + archivesNames[i], LogMessageType.System);
                     }
                     else
                     {
-                        return null;
+                        SendLogMessage($"No data. File: " + archivesNames[i], LogMessageType.System);
                     }
                 }
 
@@ -872,6 +879,8 @@ namespace OsEngine.Market.Servers.BybitData
         public event Action<OptionMarketDataForConnector> AdditionalMarketDataEvent { add { } remove { } }
         public event Action<Funding> FundingUpdateEvent { add { } remove { } }
         public event Action<SecurityVolumes> Volume24hUpdateEvent { add { } remove { } }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 

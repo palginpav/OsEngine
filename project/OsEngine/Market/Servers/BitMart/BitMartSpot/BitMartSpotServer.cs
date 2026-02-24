@@ -34,6 +34,10 @@ namespace OsEngine.Market.Servers.BitMart
             CreateParameterString(OsLocalization.Market.ServerParamPublicKey, "");
             CreateParameterPassword(OsLocalization.Market.ServerParameterSecretKey, "");
             CreateParameterString(OsLocalization.Market.Memo, "");
+
+            ServerParameters[0].Comment = OsLocalization.Market.Label246;
+            ServerParameters[1].Comment = OsLocalization.Market.Label247;
+            ServerParameters[2].Comment = OsLocalization.Market.Label271;
         }
     }
 
@@ -134,6 +138,10 @@ namespace OsEngine.Market.Servers.BitMart
         public event Action ConnectEvent;
 
         public event Action DisconnectEvent;
+
+        public event Action ForceCheckOrdersAfterReconnectEvent { add { } remove { } }
+
+        public bool IsCompletelyDeleted { get; set; }
 
         #endregion
 
@@ -1129,8 +1137,8 @@ namespace OsEngine.Market.Servers.BitMart
         {
             try
             {
-                if (_webSocketPublic.Count != 0
-                    && _webSocketPublic != null)
+                if (_webSocketPublic != null
+                    && _webSocketPublic.Count != 0)
                 {
                     for (int i = 0; i < _webSocketPublic.Count; i++)
                     {
@@ -2170,6 +2178,8 @@ namespace OsEngine.Market.Servers.BitMart
             byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
             return BitConverter.ToString(hash).Replace("-", "").ToLower();
         }
+
+        public void SetLeverage(Security security, decimal leverage) { }
 
         #endregion
 
